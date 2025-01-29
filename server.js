@@ -5,6 +5,7 @@ const healthzRoutes = require('./routes/healthz');
 require('dotenv').config();
 
 const app = express();
+app.disable('x-powered-by');
 const PORT =  process.env.PORT;
 
 app.use(express.json());
