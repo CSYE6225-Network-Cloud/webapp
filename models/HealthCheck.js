@@ -10,16 +10,9 @@ const HealthCheck = sequelize.define('HealthCheck', {
     },
     Datetime: {
         type: DataTypes.DATE,
-        defaultValue: () => {
-            // Get the current time in EST
-            const now = new Date();
-            const estOffset = -5 * 60; // Offset for EST (UTC-5)
-            const estTime = new Date(now.getTime() + estOffset * 60 * 1000);
-            return estTime;
+        defaultValue: DataTypes.NOW
         },
         allowNull: false,
-    },
-
 },
 {
     timestamps: false

@@ -8,8 +8,7 @@ const app = express();
 app.disable('x-powered-by');
 const PORT =  process.env.PORT;
 
-app.use(express.json());
-
+app.use(express.urlencoded({extented: true}));
 // Use the healthz route
 app.use('/', healthzRoutes);
 
