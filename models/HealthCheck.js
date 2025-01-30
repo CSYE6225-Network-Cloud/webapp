@@ -12,7 +12,6 @@ const HealthCheck = sequelize.define('HealthCheck', {
         type: DataTypes.DATE,
         defaultValue: DataTypes.NOW
         },
-        allowNull: false,
 },
 {
     timestamps: false

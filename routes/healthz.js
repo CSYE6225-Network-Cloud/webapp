@@ -7,7 +7,8 @@ router.get('/healthz', performHealthCheck);
 
 // Handle unsupported HTTP methods for /healthz
 router.all('/healthz', (req, res) => {
-    res.status(405).send(); // Method Not Allowed
+    // Method Not Allowed
+    res.status(405).send();
 });
 
 module.exports = router;

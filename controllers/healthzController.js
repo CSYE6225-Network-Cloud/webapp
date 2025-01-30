@@ -12,6 +12,9 @@ const allowedHeaders = [
 
 // Controller function for /healthz
 const performHealthCheck = async (req, res) => {
+    if (req.method === "HEAD") {
+        return res.status(405).end();
+    }
     //Set headers
     res.set("Cache-Control","no-cache, no-store, must-revalidate;");
     res.set("Pragma","no-cache");

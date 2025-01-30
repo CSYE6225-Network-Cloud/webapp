@@ -29,12 +29,6 @@ async function createDatabaseIfNotExists() {
     }
 }
 
-// Initialize Sequelize after ensuring the database exists
-(async () => {
-    await createDatabaseIfNotExists();
-
-})();
-
 const sequelize = new Sequelize(DB_NAME, DB_USER, DB_PASSWORD, {
     host: DB_HOST,
     port: DB_PORT,
@@ -42,4 +36,4 @@ const sequelize = new Sequelize(DB_NAME, DB_USER, DB_PASSWORD, {
     logging: false,
 });
 
-module.exports = { sequelize };
+module.exports = { sequelize, createDatabaseIfNotExists };
