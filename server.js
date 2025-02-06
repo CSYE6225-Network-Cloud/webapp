@@ -1,30 +1,39 @@
-// Imports
-import express from 'express';
-import dotenv from 'dotenv';
-import { sequelize, createDatabaseIfNotExists } from './db.js';
-import healthzRoutes from './routes/healthz.js';
+const express = require('express');
+const dotenv = require('dotenv');
+const { sequelize, createDatabaseIfNotExists } = require('./db.js');
+const healthzRoutes = require('./routes/healthz.js');
 
 // Load environment variables
 dotenv.config();
 
 const app = express();
 app.disable('x-powered-by');
-const PORT = process.env.PORT;
+const PORT = process.env.PORT || 3000;
 
 app.use(express.urlencoded({ extended: true }));
 
 // Use the healthz route
-app.use('/', healthzRoutes)
+app.use('/', healthzRoutes);
+
 // Middleware to handle unimplemented routes
-.use((req, res) => {
+app.use((req, res) => {
     res.status(404).send();
 });
 
 // Ensure database exists before starting
-await createDatabaseIfNotExists();
-
-// Sync database and start the server
-sequelize.sync().then(() => {
+const startServer = async () => {
+    await createDatabaseIfNotExists();
+    await sequelize.sync();
     console.log('Database synchronized.');
-    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-});
+
+    if (process.env.NODE_ENV !== 'test') {
+        app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+    }
+};
+
+// Start the server only if not in test mode
+if (process.env.NODE_ENV !== 'test') {
+    startServer();
+}
+
+module.exports = app;
