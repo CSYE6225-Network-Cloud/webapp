@@ -1,0 +1,62 @@
+name: WebApp Unit Testing
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  run-tests:
+    name: Run Unit Tests
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          MYSQL_DATABASE: ${{ secrets.DB_NAME }}
+        ports:
+          - 3306:3306
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Update and Install Dependencies
+        run: sudo apt update && sudo apt upgrade -y
+
+      - name: Wait for MySQL to Be Ready
+        run: |
+          for i in {30..0}; do
+            if mysqladmin ping -h 127.0.0.1 -uroot -p"${{ secrets.DB_PASSWORD }}" --silent; then
+              echo "MySQL is up and running"
+              break
+            fi
+            echo "Waiting for MySQL..."
+            sleep 2
+          done
+          if [ "$i" = 0 ]; then
+            echo "ERROR: MySQL failed to start"
+            exit 1
+          fi
+
+      - name: Create `.env` File
+        run: |
+          cat <<EOF > .env
+          DB_HOST=${{ secrets.DB_HOST }}
+          DB_PORT=${{ secrets.DB_PORT }}
+          DB_USER=${{ secrets.DB_USER }}
+          DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+          DB_NAME=${{ secrets.DB_NAME }}
+          PORT=${{ secrets.PORT }}
+          EOF
+
+      - name: Install Project Dependencies
+        run: npm install
+
+      - name: Run Tests
+        run: npm test
