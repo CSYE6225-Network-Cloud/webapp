@@ -53,7 +53,7 @@ sudo useradd -m -g $APP_GROUP -s /bin/bash $APP_USER || echo "User already exist
 # Set up the application
 echo "Unzipping application from $LOCAL_APP_PATH..."
 sudo mkdir -p "$LOCAL_APP_DIR"
-sudo unzip -o "$LOCAL_APP_PATH" -d "LOCAL_APP_DIR"
+sudo unzip -o "$LOCAL_APP_PATH" -d "$LOCAL_APP_DIR"
 sudo chown -R $APP_USER:$APP_GROUP $LOCAL_APP_DIR
 sudo chmod -R 750 $LOCAL_APP_DIR
 
