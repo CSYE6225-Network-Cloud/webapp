@@ -86,6 +86,7 @@ describe('Health Check API (/healthz)', () => {
         jest.restoreAllMocks();
     });
 
+
     test('GET /nonexistent should return 404 Not Found', async () => {
         const response = await request(app).get('/nonexistent');
         expect(response.status).toBe(404);
