@@ -1,7 +1,15 @@
-// tests/healthz.test.js
 const request = require('supertest');
 const app = require('../server');
-const HealthCheck = require('../models/HealthCheck');
+const db = require('../db'); // Adjust based on your project structure
+
+// Ensure database is initialized before running tests
+beforeAll(async () => {
+    await db.sequelize.sync(); // Creates tables if they don't exist
+});
+
+afterAll(async () => {
+    await db.sequelize.close(); // Close DB connection after all tests
+});
 
 describe('Health Check API (/healthz)', () => {
     test('GET /healthz should return 200 OK with no body and valid headers', async () => {
@@ -20,22 +28,22 @@ describe('Health Check API (/healthz)', () => {
         expect(response.status).toBe(405);
     });
 
-    test('POST /healthz should return 405 Method Not Allowed', async () => {
+    test('PUT /healthz should return 405 Method Not Allowed', async () => {
         const response = await request(app).put('/healthz');
         expect(response.status).toBe(405);
     });
 
-    test('POST /healthz should return 405 Method Not Allowed', async () => {
+    test('PATCH /healthz should return 405 Method Not Allowed', async () => {
         const response = await request(app).patch('/healthz');
         expect(response.status).toBe(405);
     });
 
-    test('POST /healthz should return 405 Method Not Allowed', async () => {
+    test('DELETE /healthz should return 405 Method Not Allowed', async () => {
         const response = await request(app).delete('/healthz');
         expect(response.status).toBe(405);
     });
 
-    test('POST /healthz should return 405 Method Not Allowed', async () => {
+    test('OPTIONS /healthz should return 405 Method Not Allowed', async () => {
         const response = await request(app).options('/healthz');
         expect(response.status).toBe(405);
     });
@@ -60,8 +68,15 @@ describe('Health Check API (/healthz)', () => {
     });
 
     test('GET /healthz should return 503 Service Unavailable when an error occurs', async () => {
-        const HealthCheck = require('../models/HealthCheck');  // Adjust the path to match your project structure
+        // Import the model properly
+        const HealthCheck = require('../models/HealthCheck');
 
+        // Check if `HealthCheck.create` exists
+        if (!HealthCheck || !HealthCheck.create) {
+            throw new Error('HealthCheck.create is undefined. Check your import.');
+        }
+
+        // Mock the `create` method to throw an error
         jest.spyOn(HealthCheck, 'create').mockImplementation(() => {
             throw new Error('Database failure');
         });
@@ -69,7 +84,6 @@ describe('Health Check API (/healthz)', () => {
         const response = await request(app).get('/healthz');
         expect(response.status).toBe(503);
 
-        // Restore the mock after the test
         jest.restoreAllMocks();
     });
 
