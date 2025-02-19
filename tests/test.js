@@ -1,6 +1,6 @@
 const request = require('supertest');
 const app = require('../server');
-const db = require('../db'); // Adjust based on your project structure
+const db = require('../db');
 
 // Ensure database is initialized before running tests
 beforeAll(async () => {
@@ -68,7 +68,6 @@ describe('Health Check API (/healthz)', () => {
     });
 
     test('GET /healthz should return 503 Service Unavailable when an error occurs', async () => {
-        // Import the model properly
         const HealthCheck = require('../models/HealthCheck');
 
         // Check if `HealthCheck.create` exists
