@@ -54,6 +54,10 @@ Before you build and deploy the application locally, ensure the following prereq
   DB_PORT=3306
   PORT = 8080
 
+### 4. Github Unit Tests
+
+Unit tests are configured to check the functionalities, Unit tests are ran on every PR 
+
 ## Setup Instructions
 
 ### 1. Clone the Repository
