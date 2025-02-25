@@ -56,15 +56,6 @@ jobs:
           echo '${{ secrets.GCP_DEMO_CREDENTIALS }}' > gcp-demo-credentials.json
           echo "GCP_DEMO_PROJECT_ID=$(echo '${{ secrets.GCP_DEMO_CREDENTIALS }}' | jq -r '.project_id')" >> $GITHUB_ENV
 
-      # Debug GCP Authentication
-      - name: Debug GCP Authentication
-        run: |
-          echo "Checking GCP authentication..."
-          gcloud auth list
-          gcloud config list
-          echo "Checking GCP credentials file..."
-          cat $GOOGLE_APPLICATION_CREDENTIALS || echo "GCP Credentials file not found!"
-
       # Setup AWS DEMO Account ID for sharing
       - name: Configure AWS DEMO Account
         id: setup-aws-demo
@@ -86,6 +77,21 @@ jobs:
         with:
           service_account_key: ${{ secrets.GCP_DEV_CREDENTIALS }}
           export_default_credentials: true
+
+      - name: Authenticate User for GCP
+        id: authenticate-gcp-user
+        run: |
+          # Extract client_email from the JSON credentials
+          GCP_DEV_EMAIL=$(echo '${{ secrets.GCP_DEV_CREDENTIALS }}' | jq -r '.client_email')
+
+          # Authenticate the service account
+          gcloud auth activate-service-account --key-file="gcp-dev-credentials.json"
+
+          # Set the active account
+          gcloud config set account ${GCP_DEV_EMAIL}
+
+          # Export the email to the environment for later use
+          echo "GCP_DEV_EMAIL=${GCP_DEV_EMAIL}" >> $GITHUB_ENV
 
       - name: Install Packer
         uses: hashicorp/setup-packer@v2
