@@ -1,0 +1,55 @@
+name: Validate Packer Script
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  validate_packer:
+    name: Validate Packer Script
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Install pkg globally
+        run: npm install -g pkg
+
+      - name: Build Application with pkg
+        run: |
+          # Ensure dependencies are installed
+          npm install
+
+          # Use `pkg` to create a binary executable
+          pkg server.js --output infra/packer/dist/webapp --targets node18-linux-x64
+
+          # Ensure the binary has execute permissions
+          chmod +x infra/packer/dist/webapp
+
+          echo "Build complete! Binary located at infra/packer/dist/webapp"
+
+      - name: Install Packer
+        uses: hashicorp/setup-packer@v2
+        with:
+          version: latest
+
+      - name: Initialize Packer
+        run: packer init infra/packer/
+
+      - name: Check Packer Formatting
+        run: |
+          if packer fmt -check -diff infra/packer/; then
+            echo "Packer format is correct."
+          else
+            echo "Packer format check failed. Run 'packer fmt infra/packer/' locally to fix formatting."
+            exit 1
+          fi
+
+      - name: Validate Packer Configuration
+        run: |
+          packer validate infra/packer/machine-image.pkr.hcl
