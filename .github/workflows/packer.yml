@@ -39,17 +39,19 @@ jobs:
           version: latest
 
       - name: Initialize Packer
-        run: packer init infra/packer/
+        working-directory: infra/packer
+        run: packer init .
 
       - name: Check Packer Formatting
+        working-directory: infra/packer
         run: |
-          if packer fmt -check -diff infra/packer/; then
+          if packer fmt -check -diff .; then
             echo "Packer format is correct."
           else
-            echo "Packer format check failed. Run 'packer fmt infra/packer/' locally to fix formatting."
+            echo "Packer format check failed."
             exit 1
           fi
 
       - name: Validate Packer Configuration
-        run: |
-          packer validate infra/packer/packer-machine-image.pkr.hcl
+        working-directory: infra/packer
+        run: packer validate packer-machine-image.pkr.hcl
