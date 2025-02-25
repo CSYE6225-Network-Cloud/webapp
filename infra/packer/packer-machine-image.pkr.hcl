@@ -11,24 +11,80 @@ packer {
   }
 }
 
+variable "aws_region" {
+  type    = string
+  default = "us-east-1"
+}
+
+variable "aws_source_ami" {
+  type    = string
+  default = "ami-0609a4e88e9e5a526" // Ubuntu 24.04 LTS
+}
+
+variable "instance_type" {
+  type    = string
+  default = "t2.micro"
+}
+
+variable "demo_account_id" {
+  type    = string
+  default = ""
+  description = "AWS account ID to share the AMI with"
+}
+
+variable "gcp_project_id" {
+  type    = string
+  default = "dev-project-452007"
+  description = "GCP DEV project ID"
+}
+
+variable "gcp_demo_project_id" {
+  type    = string
+  default = ""
+  description = "GCP DEMO project ID to share the image with"
+}
+
+variable "gcp_source_image" {
+  type    = string
+  default = "ubuntu-2404-noble-amd64-v20250214"
+}
+
+variable "gcp_zone" {
+  type    = string
+  default = "us-east1-b"
+}
+
+variable "gcp_machine_type" {
+  type    = string
+  default = "e2-medium"
+}
+
+variable "gcp_storage_location" {
+  type    = string
+  default = "us"
+}
+
 # AWS AMI Build
 source "amazon-ebs" "ubuntu" {
-  region                      = "us-east-1"
-  source_ami                  = "ami-0609a4e88e9e5a526"
-  instance_type               = "t2.micro"
+  region                      = var.aws_region
+  source_ami                  = var.aws_source_ami
+  instance_type               = var.instance_type
   ssh_username                = "ubuntu"
   ami_name                    = "custom-nodejs-mysql-{{timestamp}}"
   ami_description             = "Custom image with Node.js binary and MySQL"
   associate_public_ip_address = true
   ssh_timeout                 = "10m"
+
+  # Share AMI with the DEMO account
+  ami_users                   = [var.demo_account_id]
 }
 
 # GCP Image Build
 source "googlecompute" "ubuntu" {
-  project_id           = "dev-project-452007"
-  source_image         = "ubuntu-2404-noble-amd64-v20250214"
-  machine_type         = "e2-medium"
-  zone                 = "us-east1-b"
+  project_id           = var.gcp_project_id
+  source_image         = var.gcp_source_image
+  machine_type         = var.gcp_machine_type
+  zone                 = var.gcp_zone
   image_name           = "custom-nodejs-mysql-{{timestamp}}"
   image_family         = "custom-images"
   image_description    = "Custom GCP image with Node.js and MySQL"
@@ -38,7 +94,7 @@ source "googlecompute" "ubuntu" {
 
 build {
   sources = [
-    # "source.amazon-ebs.ubuntu",
+    "source.amazon-ebs.ubuntu",
     "source.googlecompute.ubuntu"
   ]
 
@@ -62,5 +118,13 @@ build {
       "chmod +x /tmp/setup.sh",
       "sudo /tmp/setup.sh"
     ]
+  }
+
+  # Post-processor to share GCP image with DEMO project
+  post-processor "shell-local" {
+    inline = [
+      "gcloud compute images add-iam-policy-binding custom-nodejs-mysql-{{timestamp}} --member='serviceAccount:${var.gcp_demo_project_id}@appspot.gserviceaccount.com' --role='roles/compute.imageUser' --project=${var.gcp_project_id}"
+    ]
+    only = ["googlecompute.ubuntu"]
   }
 }
