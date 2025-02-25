@@ -14,7 +14,7 @@ afterAll(async () => {
 describe('Health Check API (/healthz)', () => {
     test('GET /healthz should return 200 OK with no body and valid headers', async () => {
         const response = await request(app).get('/healthz');
-        expect(response.status).toBe(201);
+        expect(response.status).toBe(200);
         expect(response.body).toEqual({});
     });
 
