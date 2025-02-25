@@ -17,21 +17,21 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      - name: Install pkg globally
+      - name: Install Dependencies
+        run: npm ci  # More reliable than `npm install`
+
+      - name: Install pkg Globally
         run: npm install -g pkg
 
       - name: Build Application with pkg
         run: |
-          # Ensure dependencies are installed
-          npm install
-
-          # Use `pkg` to create a binary executable
+          set -e  # Stop if any command fails
           pkg server.js --output infra/packer/dist/webapp --targets node18-linux-x64
-
-          # Ensure the binary has execute permissions
           chmod +x infra/packer/dist/webapp
-
           echo "Build complete! Binary located at infra/packer/dist/webapp"
+
+      - name: Debug Build Output
+        run: ls -lah infra/packer/dist/  # Ensure binary exists before proceeding
 
       - name: Install Packer
         uses: hashicorp/setup-packer@v2
