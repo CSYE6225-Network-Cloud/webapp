@@ -56,6 +56,15 @@ jobs:
           echo '${{ secrets.GCP_DEMO_CREDENTIALS }}' > gcp-demo-credentials.json
           echo "GCP_DEMO_PROJECT_ID=$(echo '${{ secrets.GCP_DEMO_CREDENTIALS }}' | jq -r '.project_id')" >> $GITHUB_ENV
 
+      # Debug GCP Authentication
+      - name: Debug GCP Authentication
+        run: |
+          echo "Checking GCP authentication..."
+          gcloud auth list
+          gcloud config list
+          echo "Checking GCP credentials file..."
+          cat $GOOGLE_APPLICATION_CREDENTIALS || echo "GCP Credentials file not found!"
+
       # Setup AWS DEMO Account ID for sharing
       - name: Configure AWS DEMO Account
         id: setup-aws-demo
