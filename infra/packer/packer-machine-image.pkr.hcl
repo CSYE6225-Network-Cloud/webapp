@@ -43,17 +43,17 @@ build {
   ]
 
   provisioner "file" {
-    source      = "../../dist/webapp"
+    source      = "dist/webapp"
     destination = "/tmp/webapp"
   }
 
   provisioner "file" {
-    source      = "./setup.sh"
+    source      = "setup.sh"
     destination = "/tmp/setup.sh"
   }
 
   provisioner "file" {
-    source      = "./webapp.service"
+    source      = "webapp.service"
     destination = "/tmp/webapp.service"
   }
 
