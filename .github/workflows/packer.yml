@@ -52,4 +52,4 @@ jobs:
 
       - name: Validate Packer Configuration
         run: |
-          packer validate infra/packer/machine-image.pkr.hcl
+          packer validate infra/packer/packer-machine-image.pkr.hcl
