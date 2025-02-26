@@ -95,7 +95,7 @@ source "googlecompute" "ubuntu" {
 build {
   sources = [
     "source.amazon-ebs.ubuntu",
-    # "source.googlecompute.ubuntu"
+    "source.googlecompute.ubuntu"  # Uncommented to build both AWS and GCP images
   ]
 
   provisioner "file" {
@@ -128,13 +128,16 @@ build {
     ]
     inline = [
       # Get the latest image name dynamically
-      "LATEST_IMAGE=$(gcloud compute images list --project=${var.gcp_project_id} --filter='name~custom-nodejs-mysql' --sort-by=~creationTimestamp --limit=1 --format='value(name)')",
+      "LATEST_IMAGE=$(gcloud compute images list --project=${var.gcp_project_id} --filter='name~csye6225-nodejs-mysql' --sort-by=~creationTimestamp --limit=1 --format='value(name)')",
 
       # Fix: Use POSIX-compliant syntax for checking empty variables
       "[ -z \"$LATEST_IMAGE\" ] && echo '❌ No image found!' && exit 1 || echo '✅ Found image: '$LATEST_IMAGE",
 
+      # Extract the demo service account from credentials
+      "DEMO_SERVICE_ACCOUNT=$(cat ${path.root}/gcp-demo-credentials.json | jq -r '.client_email')",
+
       # Fix: Grant IAM access to the service account in the target project
-      "gcloud compute images add-iam-policy-binding $LATEST_IMAGE --project=${var.gcp_project_id} --member='serviceAccount:image-builder@dev-project-452007.iam.gserviceaccount.com' --role='roles/compute.imageUser'"
+      "gcloud compute images add-iam-policy-binding $LATEST_IMAGE --project=${var.gcp_project_id} --member=\"serviceAccount:$DEMO_SERVICE_ACCOUNT\" --role='roles/compute.imageUser'"
     ]
     only = ["googlecompute.ubuntu"]
   }

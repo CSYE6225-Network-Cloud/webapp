@@ -55,6 +55,14 @@ jobs:
         run: |
           echo '${{ secrets.GCP_DEMO_CREDENTIALS }}' > gcp-demo-credentials.json
           echo "GCP_DEMO_PROJECT_ID=$(echo '${{ secrets.GCP_DEMO_CREDENTIALS }}' | jq -r '.project_id')" >> $GITHUB_ENV
+          echo "GCP_DEMO_SERVICE_ACCOUNT=$(echo '${{ secrets.GCP_DEMO_CREDENTIALS }}' | jq -r '.client_email')" >> $GITHUB_ENV
+
+      # Debug variables
+      - name: Debug environment variables
+        run: |
+          echo "GCP_PROJECT_ID: ${GCP_PROJECT_ID}"
+          echo "GCP_DEMO_PROJECT_ID: ${GCP_DEMO_PROJECT_ID}"
+          echo "GCP_DEMO_SERVICE_ACCOUNT: ${GCP_DEMO_SERVICE_ACCOUNT}"
 
       # Setup AWS DEMO Account ID for sharing
       - name: Configure AWS DEMO Account
@@ -67,6 +75,7 @@ jobs:
           # Get account ID and set as environment variable
           DEMO_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           echo "DEMO_ACCOUNT_ID=${DEMO_ACCOUNT_ID}" >> $GITHUB_ENV
+          echo "DEMO_ACCOUNT_ID: ${DEMO_ACCOUNT_ID}"
           
           # Switch back to DEV credentials for building
           unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
@@ -114,25 +123,44 @@ jobs:
       - name: Verify AWS AMI Creation
         run: |
           echo "Verifying AWS AMI creation..."
-          aws ec2 describe-images --owners self --query 'Images[*].[ImageId,Name,CreationDate]' --output table --filters "Name=name,Values=custom-nodejs-mysql-*" | head -n 10
-      - name: Set Project in Demo workspace
-        id: set-project
+          aws ec2 describe-images --owners self --query 'Images[*].[ImageId,Name,CreationDate]' --output table --filters "Name=name,Values=csye6225-nodejs-mysql-*" | head -n 10
+
+      - name: Verify AMI sharing with DEMO account
         run: |
-          gcloud config set project ${GCP_DEMO_PROJECT_ID}
+          echo "Verifying AMI sharing with DEMO account..."
+          # Get the most recently created AMI
+          LATEST_AMI=$(aws ec2 describe-images --owners self --query 'Images[?starts_with(Name, `csye6225-nodejs-mysql-`)]|[0].ImageId' --output text)
+          echo "Latest AMI ID: ${LATEST_AMI}"
+          
+          # Check if AMI is shared with DEMO account
+          aws ec2 describe-image-attribute --image-id ${LATEST_AMI} --attribute launchPermission
+          
+          # Temporarily use DEMO credentials to check if AMI is visible
+          export AWS_ACCESS_KEY_ID=${{ secrets.DEMO_AWS_ACCESS_KEY_ID }}
+          export AWS_SECRET_ACCESS_KEY=${{ secrets.DEMO_AWS_SECRET_ACCESS_KEY }}
+          
+          echo "Checking if AMI is visible in DEMO account..."
+          aws ec2 describe-images --owners ${DEMO_ACCOUNT_ID} --query 'Images[*].[ImageId,Name]' --output table --filters "Name=name,Values=csye6225-nodejs-mysql-*"
 
       - name: Verify GCP Machine Image Creation
         run: |
           echo "Verifying GCP Machine Image creation..."
-          gcloud compute images list --filter="name:custom-nodejs-mysql" --limit=5
+          gcloud compute images list --project=${GCP_PROJECT_ID} --filter="name:csye6225-nodejs-mysql" --limit=5
 
       - name: Verify GCP Image Sharing
         run: |
           echo "Verifying GCP Image sharing with DEMO project: ${GCP_DEMO_PROJECT_ID}"
           # Get the most recently created image
-          LATEST_IMAGE=$(gcloud compute images list --filter="name:custom-nodejs-mysql" --sort-by=~creationTimestamp --limit=1 --format="value(name)")
+          LATEST_IMAGE=$(gcloud compute images list --project=${GCP_PROJECT_ID} --filter="name:csye6225-nodejs-mysql" --sort-by=~creationTimestamp --limit=1 --format="value(name)")
           
           # Verify permissions
           gcloud compute images get-iam-policy $LATEST_IMAGE --project=${GCP_PROJECT_ID} --format=json
+          
+          # Switch to DEMO credentials to check if image is accessible
+          gcloud auth activate-service-account --key-file="gcp-demo-credentials.json"
+          
+          echo "Checking if image is accessible in DEMO project..."
+          gcloud compute images describe $LATEST_IMAGE --project=${GCP_PROJECT_ID}
 
       # Clean up credentials after build
       - name: Clean Up Credentials
