@@ -133,11 +133,8 @@ build {
       # Fix: Use POSIX-compliant syntax for checking empty variables
       "[ -z \"$LATEST_IMAGE\" ] && echo '❌ No image found!' && exit 1 || echo '✅ Found image: '$LATEST_IMAGE",
 
-      # Extract the demo service account from credentials
-      "DEMO_SERVICE_ACCOUNT=$(cat ${path.root}/gcp-demo-credentials.json | jq -r '.client_email')",
-
-      # Fix: Grant IAM access to the service account in the target project
-      "gcloud compute images add-iam-policy-binding $LATEST_IMAGE --project=${var.gcp_project_id} --member=\"serviceAccount:$DEMO_SERVICE_ACCOUNT\" --role='roles/compute.imageUser'"
+      # Fix: Grant IAM access to the project instead of a specific service account
+      "gcloud compute images add-iam-policy-binding $LATEST_IMAGE --project=${var.gcp_project_id} --member=\"projectEditor:${var.gcp_demo_project_id}\" --role='roles/compute.imageUser'"
     ]
     only = ["googlecompute.ubuntu"]
   }
