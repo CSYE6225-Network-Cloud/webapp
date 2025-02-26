@@ -119,23 +119,4 @@ build {
       "sudo /tmp/setup.sh"
     ]
   }
-
-  # Post-processor to share GCP image with DEMO project
-  post-processor "shell-local" {
-    environment_vars = [
-      "GOOGLE_APPLICATION_CREDENTIALS=${path.root}/gcp-dev-credentials.json",
-      "GCP_DEMO_PROJECT_ID=${var.gcp_demo_project_id}"
-    ]
-    inline = [
-      # Get the latest image name dynamically
-      "LATEST_IMAGE=$(gcloud compute images list --project=${var.gcp_project_id} --filter='name~csye6225-nodejs-mysql' --sort-by=~creationTimestamp --limit=1 --format='value(name)')",
-
-      # Fix: Use POSIX-compliant syntax for checking empty variables
-      "[ -z \"$LATEST_IMAGE\" ] && echo '❌ No image found!' && exit 1 || echo '✅ Found image: '$LATEST_IMAGE",
-
-      # Fix: Grant IAM access to the project instead of a specific service account
-      "gcloud compute images add-iam-policy-binding $LATEST_IMAGE --project=${var.gcp_project_id} --member=\"projectEditor:${var.gcp_demo_project_id}\" --role='roles/compute.imageUser'"
-    ]
-    only = ["googlecompute.ubuntu"]
-  }
 }
