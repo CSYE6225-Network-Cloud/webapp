@@ -124,11 +124,32 @@ jobs:
         run: |
           echo "Verifying AWS AMI creation..."
           aws ec2 describe-images --owners self --query 'Images[*].[ImageId,Name,CreationDate]' --output table --filters "Name=name,Values=csye6225-nodejs-mysql-*" | head -n 10
-#
-#      - name: Verify GCP Machine Image Creation
-#        run: |
-#          echo "Verifying GCP Machine Image creation..."
-#          gcloud compute images list --project=${GCP_PROJECT_ID} --filter="name:csye6225-nodejs-mysql" --limit=5
+      #
+      - name: Verify GCP Machine Image Creation
+        run: |
+          echo "Verifying GCP Machine Image creation..."
+          gcloud compute images list --project=${GCP_PROJECT_ID} --filter="name:csye6225-nodejs-mysql" --limit=5
+
+      # Run the GCP migration script after GCP Machine Image is verified
+      - name: Migrate GCP Machine Image to DEMO Project
+        run: |
+          echo "Running GCP migration script..."
+          
+          # Make the script executable
+          chmod +x infra/packer/gcp_migration.sh
+          
+          # Run the script with zone parameter
+          ./infra/packer/gcp_migration.sh us-east1-b
+          
+          # Verify the machine image in the DEMO project
+          echo "Verifying Machine Image in DEMO project..."
+          
+          # Temporarily authenticate with DEMO credentials to verify
+          gcloud auth activate-service-account --key-file="gcp-demo-credentials.json"
+          gcloud config set project ${GCP_DEMO_PROJECT_ID}
+          
+          gcloud compute images list --project=${GCP_DEMO_PROJECT_ID} --filter="name:copy-csye6225-nodejs-mysql" --limit=5
+          gcloud compute machine-images list --project=${GCP_DEMO_PROJECT_ID} --filter="name:mi-demo-csye6225-nodejs-mysql" --limit=5
 
       # Run the AMI migration script after AWS AMI is verified
       - name: Migrate AMI to DEMO Account
