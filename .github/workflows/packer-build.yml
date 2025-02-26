@@ -115,6 +115,10 @@ jobs:
         run: |
           echo "Verifying AWS AMI creation..."
           aws ec2 describe-images --owners self --query 'Images[*].[ImageId,Name,CreationDate]' --output table --filters "Name=name,Values=custom-nodejs-mysql-*" | head -n 10
+      - name: Set Project in Demo workspace
+        id: set-project
+        run: |
+          gcloud config set project ${GCP_DEMO_PROJECT_ID}
 
       - name: Verify GCP Machine Image Creation
         run: |

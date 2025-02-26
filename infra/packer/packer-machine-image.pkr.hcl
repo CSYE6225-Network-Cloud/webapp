@@ -127,7 +127,14 @@ build {
       "GCP_DEMO_PROJECT_ID=${var.gcp_demo_project_id}"
     ]
     inline = [
-      "gcloud compute images add-iam-policy-binding custom-nodejs-mysql-{{timestamp}} --member='serviceAccount:${var.gcp_demo_project_id}@appspot.gserviceaccount.com' --role='roles/compute.imageUser' --project=${var.gcp_project_id}"
+      # Get the latest image name dynamically
+      "LATEST_IMAGE=$(gcloud compute images list --project=${var.gcp_project_id} --filter='name~custom-nodejs-mysql' --sort-by=~creationTimestamp --limit=1 --format='value(name)')",
+
+      # Fix: Use POSIX-compliant syntax for checking empty variables
+      "[ -z \"$LATEST_IMAGE\" ] && echo '❌ No image found!' && exit 1 || echo '✅ Found image: '$LATEST_IMAGE",
+
+      # Fix: Grant IAM access to the service account in the target project
+      "gcloud compute images add-iam-policy-binding $LATEST_IMAGE --project=${var.gcp_project_id} --member='serviceAccount:image-builder@dev-project-452007.iam.gserviceaccount.com' --role='roles/compute.imageUser'"
     ]
     only = ["googlecompute.ubuntu"]
   }
