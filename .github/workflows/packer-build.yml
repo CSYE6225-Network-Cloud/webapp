@@ -41,20 +41,20 @@ jobs:
           aws-secret-access-key: ${{ secrets.DEV_AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-#      # Setup GCP DEV credentials from JSON
-#      - name: Setup GCP DEV Credentials
-#        id: setup-gcp-dev
-#        run: |
-#          echo '${{ secrets.GCP_DEV_CREDENTIALS }}' > gcp-dev-credentials.json
-#          echo "GOOGLE_APPLICATION_CREDENTIALS=$(pwd)/gcp-dev-credentials.json" >> $GITHUB_ENV
-#          echo "GCP_PROJECT_ID=$(echo '${{ secrets.GCP_DEV_CREDENTIALS }}' | jq -r '.project_id')" >> $GITHUB_ENV
+      # Setup GCP DEV credentials from JSON
+      - name: Setup GCP DEV Credentials
+        id: setup-gcp-dev
+        run: |
+          echo '${{ secrets.GCP_DEV_CREDENTIALS }}' > gcp-dev-credentials.json
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$(pwd)/gcp-dev-credentials.json" >> $GITHUB_ENV
+          echo "GCP_PROJECT_ID=$(echo '${{ secrets.GCP_DEV_CREDENTIALS }}' | jq -r '.project_id')" >> $GITHUB_ENV
 
-#      # Setup GCP DEMO credentials for sharing
-#      - name: Setup GCP DEMO Project Info
-#        id: setup-gcp-demo
-#        run: |
-#          echo '${{ secrets.GCP_DEMO_CREDENTIALS }}' > gcp-demo-credentials.json
-#          echo "GCP_DEMO_PROJECT_ID=$(echo '${{ secrets.GCP_DEMO_CREDENTIALS }}' | jq -r '.project_id')" >> $GITHUB_ENV
+      # Setup GCP DEMO credentials for sharing
+      - name: Setup GCP DEMO Project Info
+        id: setup-gcp-demo
+        run: |
+          echo '${{ secrets.GCP_DEMO_CREDENTIALS }}' > gcp-demo-credentials.json
+          echo "GCP_DEMO_PROJECT_ID=$(echo '${{ secrets.GCP_DEMO_CREDENTIALS }}' | jq -r '.project_id')" >> $GITHUB_ENV
 
       # Setup AWS DEMO Account ID for sharing
       - name: Configure AWS DEMO Account
@@ -71,27 +71,27 @@ jobs:
           # Switch back to DEV credentials for building
           unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
 
-#      # Install and authenticate gcloud CLI with DEV credentials
-#      - name: Set up Cloud SDK
-#        uses: google-github-actions/setup-gcloud@v1
-#        with:
-#          service_account_key: ${{ secrets.GCP_DEV_CREDENTIALS }}
-#          export_default_credentials: true
-#
-#      - name: Authenticate User for GCP
-#        id: authenticate-gcp-user
-#        run: |
-#          # Extract client_email from the JSON credentials
-#          GCP_DEV_EMAIL=$(echo '${{ secrets.GCP_DEV_CREDENTIALS }}' | jq -r '.client_email')
-#
-#          # Authenticate the service account
-#          gcloud auth activate-service-account --key-file="gcp-dev-credentials.json"
-#
-#          # Set the active account
-#          gcloud config set account ${GCP_DEV_EMAIL}
-#
-#          # Export the email to the environment for later use
-#          echo "GCP_DEV_EMAIL=${GCP_DEV_EMAIL}" >> $GITHUB_ENV
+      # Install and authenticate gcloud CLI with DEV credentials
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+        with:
+          service_account_key: ${{ secrets.GCP_DEV_CREDENTIALS }}
+          export_default_credentials: true
+
+      - name: Authenticate User for GCP
+        id: authenticate-gcp-user
+        run: |
+          # Extract client_email from the JSON credentials
+          GCP_DEV_EMAIL=$(echo '${{ secrets.GCP_DEV_CREDENTIALS }}' | jq -r '.client_email')
+
+          # Authenticate the service account
+          gcloud auth activate-service-account --key-file="gcp-dev-credentials.json"
+
+          # Set the active account
+          gcloud config set account ${GCP_DEV_EMAIL}
+
+          # Export the email to the environment for later use
+          echo "GCP_DEV_EMAIL=${GCP_DEV_EMAIL}" >> $GITHUB_ENV
 
       - name: Install Packer
         uses: hashicorp/setup-packer@v2
@@ -107,8 +107,8 @@ jobs:
         run: |
           packer build \
             -var "demo_account_id=${DEMO_ACCOUNT_ID}" \
-#            -var "gcp_project_id=${GCP_PROJECT_ID}" \
-#            -var "gcp_demo_project_id=${GCP_DEMO_PROJECT_ID}" \
+            -var "gcp_project_id=${GCP_PROJECT_ID}" \
+            -var "gcp_demo_project_id=${GCP_DEMO_PROJECT_ID}" \
             packer-machine-image.pkr.hcl
 
       - name: Verify AWS AMI Creation
@@ -120,19 +120,19 @@ jobs:
         run: |
           gcloud config set project ${GCP_DEMO_PROJECT_ID}
 
-#      - name: Verify GCP Machine Image Creation
-#        run: |
-#          echo "Verifying GCP Machine Image creation..."
-#          gcloud compute images list --filter="name:custom-nodejs-mysql" --limit=5
-#
-#      - name: Verify GCP Image Sharing
-#        run: |
-#          echo "Verifying GCP Image sharing with DEMO project: ${GCP_DEMO_PROJECT_ID}"
-#          # Get the most recently created image
-#          LATEST_IMAGE=$(gcloud compute images list --filter="name:custom-nodejs-mysql" --sort-by=~creationTimestamp --limit=1 --format="value(name)")
-#
-#          # Verify permissions
-#          gcloud compute images get-iam-policy $LATEST_IMAGE --project=${GCP_PROJECT_ID} --format=json
+      - name: Verify GCP Machine Image Creation
+        run: |
+          echo "Verifying GCP Machine Image creation..."
+          gcloud compute images list --filter="name:custom-nodejs-mysql" --limit=5
+
+      - name: Verify GCP Image Sharing
+        run: |
+          echo "Verifying GCP Image sharing with DEMO project: ${GCP_DEMO_PROJECT_ID}"
+          # Get the most recently created image
+          LATEST_IMAGE=$(gcloud compute images list --filter="name:custom-nodejs-mysql" --sort-by=~creationTimestamp --limit=1 --format="value(name)")
+          
+          # Verify permissions
+          gcloud compute images get-iam-policy $LATEST_IMAGE --project=${GCP_PROJECT_ID} --format=json
 
       # Clean up credentials after build
       - name: Clean Up Credentials
