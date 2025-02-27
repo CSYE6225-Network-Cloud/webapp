@@ -1,0 +1,185 @@
+name: Build Packer AMI and GCP Machine Image
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/packer/**'
+      - '.github/workflows/packer-build.yml'
+
+jobs:
+  build_images:
+    name: Build and Share AMI/Machine Images
+    runs-on: ubuntu-latest
+    if: github.repository_owner == 'CSYE6225-Network-Cloud'
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Install pkg Globally
+        run: npm install -g pkg
+
+      - name: Build Application with pkg
+        run: |
+          set -e  # Stop if any command fails
+          pkg server.js --output infra/packer/dist/webapp --targets node18-linux-x64
+          chmod +x infra/packer/dist/webapp
+          echo "Build complete! Binary located at infra/packer/dist/webapp"
+
+      - name: Debug Build Output
+        run: ls -lah infra/packer/dist/
+
+      # AWS DEV Configuration
+      - name: Configure AWS DEV Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.DEV_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.DEV_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      # Setup GCP DEV credentials from JSON
+      - name: Setup GCP DEV Credentials
+        id: setup-gcp-dev
+        run: |
+          echo '${{ secrets.GCP_DEV_CREDENTIALS }}' > gcp-dev-credentials.json
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$(pwd)/gcp-dev-credentials.json" >> $GITHUB_ENV
+          echo "GCP_PROJECT_ID=$(echo '${{ secrets.GCP_DEV_CREDENTIALS }}' | jq -r '.project_id')" >> $GITHUB_ENV
+
+      # Setup GCP DEMO credentials for sharing
+      - name: Setup GCP DEMO Project Info
+        id: setup-gcp-demo
+        run: |
+          echo '${{ secrets.GCP_DEMO_CREDENTIALS }}' > gcp-demo-credentials.json
+          echo "GCP_DEMO_PROJECT_ID=$(echo '${{ secrets.GCP_DEMO_CREDENTIALS }}' | jq -r '.project_id')" >> $GITHUB_ENV
+          echo "GCP_DEMO_SERVICE_ACCOUNT=$(echo '${{ secrets.GCP_DEMO_CREDENTIALS }}' | jq -r '.client_email')" >> $GITHUB_ENV
+
+      # Debug variables
+      - name: Debug environment variables
+        run: |
+          echo "GCP_PROJECT_ID: ${GCP_PROJECT_ID}"
+          echo "GCP_DEMO_PROJECT_ID: ${GCP_DEMO_PROJECT_ID}"
+          echo "GCP_DEMO_SERVICE_ACCOUNT: ${GCP_DEMO_SERVICE_ACCOUNT}"
+
+      # Setup AWS DEMO Account ID for sharing
+      - name: Configure AWS DEMO Account
+        id: setup-aws-demo
+        run: |
+          # Temporarily use DEMO credentials to get account ID
+          export AWS_ACCESS_KEY_ID=${{ secrets.DEMO_AWS_ACCESS_KEY_ID }}
+          export AWS_SECRET_ACCESS_KEY=${{ secrets.DEMO_AWS_SECRET_ACCESS_KEY }}
+          
+          # Get account ID and set as environment variable
+          DEMO_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "DEMO_ACCOUNT_ID=${DEMO_ACCOUNT_ID}" >> $GITHUB_ENV
+          echo "DEMO_ACCOUNT_ID: ${DEMO_ACCOUNT_ID}"
+          
+          # Switch back to DEV credentials for building
+          unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+
+      # Install and authenticate gcloud CLI with DEV credentials
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+        with:
+          service_account_key: ${{ secrets.GCP_DEV_CREDENTIALS }}
+          export_default_credentials: true
+
+      - name: Authenticate User for GCP
+        id: authenticate-gcp-user
+        run: |
+          # Extract client_email from the JSON credentials
+          GCP_DEV_EMAIL=$(echo '${{ secrets.GCP_DEV_CREDENTIALS }}' | jq -r '.client_email')
+
+          # Authenticate the service account
+          gcloud auth activate-service-account --key-file="gcp-dev-credentials.json"
+
+          # Set the active account
+          gcloud config set account ${GCP_DEV_EMAIL}
+
+          # Export the email to the environment for later use
+          echo "GCP_DEV_EMAIL=${GCP_DEV_EMAIL}" >> $GITHUB_ENV
+
+      - name: Install Packer
+        uses: hashicorp/setup-packer@v2
+        with:
+          version: latest
+
+      - name: Initialize Packer
+        working-directory: infra/packer
+        run: packer init .
+
+      - name: Build AMI and Machine Images
+        working-directory: infra/packer
+        run: |
+          packer build \
+            -var "demo_account_id=${DEMO_ACCOUNT_ID}" \
+            -var "gcp_project_id=${GCP_PROJECT_ID}" \
+            -var "gcp_demo_project_id=${GCP_DEMO_PROJECT_ID}" \
+            packer-machine-image.pkr.hcl
+
+      - name: Verify AWS AMI Creation
+        run: |
+          echo "Verifying AWS AMI creation..."
+          aws ec2 describe-images --owners self --query 'Images[*].[ImageId,Name,CreationDate]' --output table --filters "Name=name,Values=csye6225-nodejs-mysql-*" | head -n 10
+      #
+      - name: Verify GCP Machine Image Creation
+        run: |
+          echo "Verifying GCP Machine Image creation..."
+          gcloud compute images list --project=${GCP_PROJECT_ID} --filter="name:csye6225-nodejs-mysql" --limit=5
+
+      # Run the GCP migration script after GCP Machine Image is verified
+      - name: Migrate GCP Machine Image to DEMO Project
+        run: |
+          echo "Running GCP migration script..."
+          
+          # Make the script executable
+          chmod +x infra/packer/gcp_migration.sh
+          
+          # Run the script with zone parameter
+          ./infra/packer/gcp_migration.sh us-east1-b
+          
+          # Verify the machine image in the DEMO project
+          echo "Verifying Machine Image in DEMO project..."
+          
+          # Temporarily authenticate with DEMO credentials to verify
+          gcloud auth activate-service-account --key-file="gcp-demo-credentials.json"
+          gcloud config set project ${GCP_DEMO_PROJECT_ID}
+          
+          gcloud compute images list --project=${GCP_DEMO_PROJECT_ID} --filter="name:copy-csye6225-nodejs-mysql" --limit=5
+          gcloud compute machine-images list --project=${GCP_DEMO_PROJECT_ID} --filter="name:mi-demo-csye6225-nodejs-mysql" --limit=5
+
+      # Run the AMI migration script after AWS AMI is verified
+      - name: Migrate AMI to DEMO Account
+        run: |
+          echo "Running AMI migration script..."
+          
+          # Create environment variables for the script
+          export DEV_AWS_ACCESS_KEY_ID="${{ secrets.DEV_AWS_ACCESS_KEY_ID }}"
+          export DEV_AWS_SECRET_ACCESS_KEY="${{ secrets.DEV_AWS_SECRET_ACCESS_KEY }}"
+          export DEMO_AWS_ACCESS_KEY_ID="${{ secrets.DEMO_AWS_ACCESS_KEY_ID }}"
+          export DEMO_AWS_SECRET_ACCESS_KEY="${{ secrets.DEMO_AWS_SECRET_ACCESS_KEY }}"
+          
+          # Make the script executable
+          chmod +x infra/packer/ami_migration.sh
+          
+          # Run the script
+          ./infra/packer/ami_migration.sh
+          
+          # Verify the AMI in the DEMO account
+          echo "Verifying AMI copy in DEMO account..."
+          
+          # Temporarily use DEMO credentials to verify
+          export AWS_ACCESS_KEY_ID=${{ secrets.DEMO_AWS_ACCESS_KEY_ID }}
+          export AWS_SECRET_ACCESS_KEY=${{ secrets.DEMO_AWS_SECRET_ACCESS_KEY }}
+          
+          aws ec2 describe-images --owners self --query 'Images[*].[ImageId,Name,CreationDate]' --output table | head -n 10
+
+      # Clean up credentials after build
+      - name: Clean Up Credentials
+        if: always()
+        run: |
+          rm -f gcp-dev-credentials.json gcp-demo-credentials.json

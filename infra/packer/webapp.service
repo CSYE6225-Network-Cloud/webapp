@@ -1,0 +1,16 @@
+[Unit]
+Description=My Node.js Application
+After=network.target
+
+[Service]
+ExecStart=/opt/myapp/webapp
+Restart=always
+User=csye6225
+Group=csye6225
+EnvironmentFile=/opt/myapp/.env
+WorkingDirectory=/opt/myapp
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
