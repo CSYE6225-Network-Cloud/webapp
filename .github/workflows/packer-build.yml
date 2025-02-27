@@ -1,7 +1,7 @@
 name: Build Packer AMI and GCP Machine Image
 
 on:
-  pull_request:
+  push:
     branches:
       - main
     paths:
@@ -12,6 +12,7 @@ jobs:
   build_images:
     name: Build and Share AMI/Machine Images
     runs-on: ubuntu-latest
+    if: github.repository_owner == 'CSYE6225-Network-Cloud'
 
     steps:
       - name: Checkout Repository

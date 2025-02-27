@@ -27,20 +27,20 @@ variable "instance_type" {
 }
 
 variable "demo_account_id" {
-  type    = string
-  default = ""
+  type        = string
+  default     = ""
   description = "AWS account ID to share the AMI with"
 }
 
 variable "gcp_project_id" {
-  type    = string
-  default = "dev-project-452007"
+  type        = string
+  default     = "dev-project-452007"
   description = "GCP DEV project ID"
 }
 
 variable "gcp_demo_project_id" {
-  type    = string
-  default = ""
+  type        = string
+  default     = ""
   description = "GCP DEMO project ID to share the image with"
 }
 
@@ -76,7 +76,7 @@ source "amazon-ebs" "ubuntu" {
   ssh_timeout                 = "10m"
 
   # Share AMI with the DEMO account
-  ami_users                   = [var.demo_account_id]
+  ami_users = [var.demo_account_id]
 }
 
 # GCP Image Build
@@ -95,7 +95,7 @@ source "googlecompute" "ubuntu" {
 build {
   sources = [
     "source.amazon-ebs.ubuntu",
-    "source.googlecompute.ubuntu"  # Uncommented to build both AWS and GCP images
+    "source.googlecompute.ubuntu" # Uncommented to build both AWS and GCP images
   ]
 
   provisioner "file" {
