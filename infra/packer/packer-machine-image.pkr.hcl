@@ -6,12 +6,12 @@ packer {
     }
     googlecompute = {
       source  = "github.com/hashicorp/googlecompute"
-           version = ">= 1.0.0"
+      version = ">= 1.0.0"
     }
   }
 }
 
-variable "aws_region" {
+variable "aws_regions" {
   type    = string
   default = "us-east-1"
 }
