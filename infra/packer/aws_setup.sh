@@ -32,24 +32,38 @@ else
   aws --version
 fi
 
-echo "Creating application directory..."
+echo "Creating application directories..."
 sudo mkdir -p /opt/webapp
-sudo mv /tmp/webapp /opt/webapp/
-sudo chmod +x /opt/webapp/webapp
+sudo mkdir -p /opt/myapp
+
+# Move the webapp from /opt/webapp to /opt/myapp
+if [ -f /opt/webapp/webapp ]; then
+  echo "Moving webapp from /opt/webapp/webapp to /opt/myapp/..."
+  sudo mv /opt/webapp/webapp /opt/myapp/
+  sudo chmod +x /opt/myapp/webapp
+else
+  echo "File /opt/webapp/webapp not found. Checking if webapp is in /tmp..."
+  # If the app is in /tmp (from an upload process), move it to /opt/myapp
+  if [ -f /tmp/webapp ]; then
+    echo "Moving webapp from /tmp/webapp to /opt/myapp/..."
+    sudo mv /tmp/webapp /opt/myapp/
+    sudo chmod +x /opt/myapp/webapp
+  else
+    echo "WARNING: webapp executable not found in expected locations."
+  fi
+fi
 
 echo "Setting ownership of application files..."
 sudo chown -R csye6225:csye6225 /opt/webapp
+sudo chown -R csye6225:csye6225 /opt/myapp
 sudo chmod -R 750 /opt/webapp
+sudo chmod -R 750 /opt/myapp
 
-echo "Setting up systemd services..."
-sudo mv /tmp/webapp.service /etc/systemd/system/webapp.service
-sudo chmod 644 /etc/systemd/system/webapp.service
-
-# Create necessary directories for webapp service
+# Ensure the systemd service directory exists
 sudo mkdir -p /etc/systemd/system/webapp.service.d/
 sudo chmod 755 /etc/systemd/system/webapp.service.d/
 
-echo "Enabling services to start on boot..."
+echo "Reloading systemd configuration..."
 sudo systemctl daemon-reload
 sudo systemctl enable webapp.service
 
