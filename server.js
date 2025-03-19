@@ -2,18 +2,21 @@ const express = require('express');
 const dotenv = require('dotenv');
 const { sequelize, createDatabaseIfNotExists } = require('./db.js');
 const healthzRoutes = require('./routes/healthz.js');
+const fileRoutes = require('./routes/file.js');
 
 // Load environment variables
 dotenv.config();
 
 const app = express();
 app.disable('x-powered-by');
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 
 app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
 
-// Use the healthz route
+// Use the routes
 app.use('/', healthzRoutes);
+app.use('/v1', fileRoutes);
 
 // Middleware to handle unimplemented routes
 app.use((req, res) => {
