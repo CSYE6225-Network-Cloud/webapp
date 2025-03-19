@@ -3,16 +3,16 @@ Description=My Node.js Application
 After=network.target
 
 [Service]
-ExecStart=/opt/webapp/webapp
+ExecStart=/opt/myapp/webapp
 Restart=always
 User=csye6225
 Group=csye6225
-WorkingDirectory=/opt/webapp
+WorkingDirectory=/opt/myapp
 StandardOutput=journal
 StandardError=journal
 
 # Wait for the .env configuration file to be available
-ExecStartPre=/bin/bash -c 'until [ -f /opt/webapp/.env ]; do sleep 2; echo "Waiting for .env configuration file..."; done'
+ExecStartPre=/bin/bash -c 'until [ -f /opt/myapp/.env ]; do sleep 2; echo "Waiting for .env configuration file..."; done'
 
 [Install]
 WantedBy=multi-user.target
