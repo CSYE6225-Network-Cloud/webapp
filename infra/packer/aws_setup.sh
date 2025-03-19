@@ -4,16 +4,38 @@ echo "Creating non-login user csye6225..."
 sudo groupadd -f csye6225
 sudo useradd -r -M -g csye6225 -s /usr/sbin/nologin csye6225
 
-echo "Updating system and installing dependencies..."
+echo "Updating system and installing prerequisites..."
 sudo apt-get update -y
-sudo apt-get install -y awscli jq
+sudo apt-get install -y curl unzip jq python3-pip
+
+echo "Installing AWS CLI v2 using the official method..."
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip -q awscliv2.zip
+sudo ./aws/install
+rm -rf aws awscliv2.zip
+
+# Verify AWS CLI is installed
+if ! command -v aws &> /dev/null; then
+  echo "ERROR: AWS CLI v2 installation failed. Trying pip installation as fallback..."
+  sudo pip3 install awscli --upgrade
+
+  # Verify pip installation
+  if ! command -v aws &> /dev/null; then
+    echo "CRITICAL ERROR: All AWS CLI installation methods failed. Setup cannot continue."
+    exit 1
+  else
+    echo "AWS CLI installed successfully via pip"
+  fi
+else
+  echo "AWS CLI v2 installed successfully"
+  # Output version info for verification
+  aws --version
+fi
 
 echo "Creating application directory..."
 sudo mkdir -p /opt/webapp
 sudo mv /tmp/webapp /opt/webapp/
 sudo chmod +x /opt/webapp/webapp
-
-# No longer need to handle user-data-fetcher.sh
 
 echo "Setting ownership of application files..."
 sudo chown -R csye6225:csye6225 /opt/webapp
