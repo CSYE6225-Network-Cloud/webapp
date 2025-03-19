@@ -111,15 +111,11 @@ build {
     destination = "/tmp/webapp.service"
   }
 
-  provisioner "file" {
-    source      = "user-data-fetcher.sh"
-    destination = "/tmp/user-data-fetcher.sh"
-  }
+  # Removed user-data-fetcher.sh file provisioner
 
   provisioner "shell" {
     inline = [
       "chmod +x /tmp/setup.sh",
-      "chmod +x /tmp/user-data-fetcher.sh",
       "sudo /tmp/setup.sh"
     ]
   }

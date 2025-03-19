@@ -1,7 +1,6 @@
 [Unit]
 Description=My Node.js Application
 After=network.target
-# Remove dependency on db-config-fetcher since we'll use Terraform userdata
 
 [Service]
 ExecStart=/opt/webapp/webapp
@@ -12,8 +11,8 @@ WorkingDirectory=/opt/webapp
 StandardOutput=journal
 StandardError=journal
 
-# Add condition to check for existence of override.conf before starting
-ExecStartPre=/bin/bash -c 'until [ -f /etc/systemd/system/webapp.service.d/override.conf ]; do sleep 2; echo "Waiting for database configuration..."; done'
+# Wait for the .env configuration file to be available
+ExecStartPre=/bin/bash -c 'until [ -f /opt/webapp/.env ]; do sleep 2; echo "Waiting for .env configuration file..."; done'
 
 [Install]
 WantedBy=multi-user.target
