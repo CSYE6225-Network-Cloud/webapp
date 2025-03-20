@@ -11,8 +11,20 @@ const app = express();
 app.disable('x-powered-by');
 const PORT = process.env.PORT || 8080;
 
+// Important: Set up middleware in the correct order
+// Body parsing middleware needs to be before routes so that body checking works
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+
+// Middleware to check for request body in GET and DELETE requests - applies to all routes
+app.use((req, res, next) => {
+    if ((req.method === 'GET' || req.method === 'DELETE') &&
+        (Object.keys(req.body).length > 0 ||
+            (req.headers['content-length'] && parseInt(req.headers['content-length']) > 0))) {
+        return res.status(400).json({ error: 'Request body is not allowed for this method' });
+    }
+    next();
+});
 
 // Use the routes
 app.use('/', healthzRoutes);
