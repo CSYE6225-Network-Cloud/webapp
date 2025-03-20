@@ -5,6 +5,30 @@ const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 const path = require('path');
 
+
+//Allowed headers for /file
+const allowedHeadersPost = [
+    'cache-control',
+    'postman-token',
+    'host',
+    'user-agent',
+    'accept',
+    'accept-encoding',
+    'connection',
+    'content-type',
+    'content-length'
+];
+
+const allowedHeadersGet = [
+    'cache-control',
+    'postman-token',
+    'host',
+    'user-agent',
+    'accept',
+    'accept-encoding',
+    'connection'
+];
+
 // Configure AWS S3
 const s3Client = new S3Client({
     region: process.env.S3_REGION || 'us-east-1'
@@ -46,6 +70,16 @@ const checkMultipleFiles = (req, res, next) => {
 
 // Controller function to upload a file
 const uploadFile = async (req, res) => {
+    // Validate headers
+    const uploadIncomingHeaders = Object.keys(req.headers);
+    const uploadInvalidHeaders = uploadIncomingHeaders.filter(
+        (header) => !allowedHeadersPost.includes(header.toLowerCase())
+    );
+
+    if (uploadInvalidHeaders.length > 0) {
+        return res.status(400).end();
+    }
+
     try {
         if (!req.file) {
             return res.status(400).end();
@@ -65,37 +99,68 @@ const uploadFile = async (req, res) => {
             ContentType: req.file.mimetype
         };
 
+        let s3UploadSuccess = false;
+
         try {
             await s3Client.send(new PutObjectCommand(uploadParams));
+            s3UploadSuccess = true;
         } catch (s3Error) {
             console.error('S3 upload error:', s3Error);
-            return res.status(500).end();
+            return res.status(503).end();
         }
 
         // Save file metadata to database
-        const fileRecord = await File.create({
-            id: fileId,
-            file_name: fileName,
-            url: `${bucketName}/${key}`, // Store the full path for consistent retrieval/deletion
-            upload_date: new Date().toISOString().split('T')[0] // Format: YYYY-MM-DD
-        });
+        try {
+            const fileRecord = await File.create({
+                id: fileId,
+                file_name: fileName,
+                url: `${bucketName}/${key}`, // Store the full path for consistent retrieval/deletion
+                upload_date: new Date().toISOString().split('T')[0] // Format: YYYY-MM-DD
+            });
 
-        // Return success response
-        return res.status(201).json({
-            file_name: fileRecord.file_name,
-            id: fileRecord.id,
-            url: fileRecord.url,
-            upload_date: fileRecord.upload_date
-        });
+            // Return success response
+            return res.status(201).json({
+                file_name: fileRecord.file_name,
+                id: fileRecord.id,
+                url: fileRecord.url,
+                upload_date: fileRecord.upload_date
+            });
+        } catch (dbError) {
+            // If RDS is down, cleanup the S3 object
+            if (s3UploadSuccess) {
+                try {
+                    await s3Client.send(new DeleteObjectCommand({
+                        Bucket: bucketName,
+                        Key: key
+                    }));
+                    console.log(`Cleaned up S3 object ${key} due to database error`);
+                } catch (cleanupError) {
+                    console.error('Failed to clean up S3 object after database error:', cleanupError);
+                }
+            }
+            console.error('Database error when saving file metadata:', dbError);
+            return res.status(503).end();
+        }
     } catch (error) {
         console.error('Error uploading file:', error);
-        return res.status(500).end();
+        return res.status(503).end();
     }
 };
 
 // Controller function to get file by ID
 const getFileById = async (req, res) => {
+    // Validate headers
+    const getIncomingHeaders = Object.keys(req.headers);
+    const getInvalidHeaders = getIncomingHeaders.filter(
+        (header) => !allowedHeadersGet.includes(header.toLowerCase())
+    );
+
+    if (getInvalidHeaders.length > 0) {
+        return res.status(400).end();
+    }
+
     try {
+        // Check for body, content-type, files and query params
         if (
             // Checks for JSON or x-www-form-urlencoded body
             Object.keys(req.body).length > 0 ||
@@ -104,9 +169,7 @@ const getFileById = async (req, res) => {
             // Check for form-data with files
             (req.files && req.files.length > 0) ||
             // Checks for any query
-            Object.keys(req.query).length > 0 ||
-            //Checks for invalid headers
-            invalidHeaders.length > 0
+            Object.keys(req.query).length > 0
         ) {
             return res.status(400).end();
         }
@@ -128,13 +191,24 @@ const getFileById = async (req, res) => {
         });
     } catch (error) {
         console.error('Error retrieving file:', error);
-        return res.status(500).end();
+        return res.status(503).end();
     }
 };
 
 // Controller function to delete file by ID
 const deleteFileById = async (req, res) => {
+    // Validate headers
+    const deleteIncomingHeaders = Object.keys(req.headers);
+    const deleteInvalidHeaders = deleteIncomingHeaders.filter(
+        (header) => !allowedHeadersGet.includes(header.toLowerCase())
+    );
+
+    if (deleteInvalidHeaders.length > 0) {
+        return res.status(400).end();
+    }
+
     try {
+        // Check for body, content-type, files and query params
         if (
             // Checks for JSON or x-www-form-urlencoded body
             Object.keys(req.body).length > 0 ||
@@ -143,9 +217,7 @@ const deleteFileById = async (req, res) => {
             // Check for form-data with files
             (req.files && req.files.length > 0) ||
             // Checks for any query
-            Object.keys(req.query).length > 0 ||
-            //Checks for invalid headers
-            invalidHeaders.length > 0
+            Object.keys(req.query).length > 0
         ) {
             return res.status(400).end();
         }
@@ -186,7 +258,7 @@ const deleteFileById = async (req, res) => {
         return res.status(204).end();
     } catch (error) {
         console.error('Error deleting file:', error);
-        return res.status(500).end();
+        return res.status(503).end();
     }
 };
 
