@@ -63,7 +63,9 @@ const upload = multer({
 // Middleware to check for multiple files
 const checkMultipleFiles = (req, res, next) => {
     if (req.multipleFilesAttempted) {
-        return res.status(400).json({ error: 'Multiple files detected. Only one file upload is allowed.' });
+        res.status(400);
+        res.set('Content-Length', '0');
+        return res.end();
     }
     next();
 };
@@ -77,12 +79,16 @@ const uploadFile = async (req, res) => {
     );
 
     if (uploadInvalidHeaders.length > 0) {
-        return res.status(400).end();
+        res.status(400);
+        res.set('Content-Length', '0');
+        return res.end();
     }
 
     try {
         if (!req.file) {
-            return res.status(400).end();
+            res.status(400);
+            res.set('Content-Length', '0');
+            return res.end();
         }
 
         const fileId = uuidv4();
@@ -106,7 +112,9 @@ const uploadFile = async (req, res) => {
             s3UploadSuccess = true;
         } catch (s3Error) {
             console.error('S3 upload error:', s3Error);
-            return res.status(503).end();
+            res.status(503);
+            res.set('Content-Length', '0');
+            return res.end();
         }
 
         // Save file metadata to database
@@ -139,11 +147,15 @@ const uploadFile = async (req, res) => {
                 }
             }
             console.error('Database error when saving file metadata:', dbError);
-            return res.status(503).end();
+            res.status(503);
+            res.set('Content-Length', '0');
+            return res.end();
         }
     } catch (error) {
         console.error('Error uploading file:', error);
-        return res.status(503).end();
+        res.status(503);
+        res.set('Content-Length', '0');
+        return res.end();
     }
 };
 
@@ -156,7 +168,9 @@ const getFileById = async (req, res) => {
     );
 
     if (getInvalidHeaders.length > 0) {
-        return res.status(400).end();
+        res.status(400);
+        res.set('Content-Length', '0');
+        return res.end();
     }
 
     try {
@@ -171,7 +185,9 @@ const getFileById = async (req, res) => {
             // Checks for any query
             Object.keys(req.query).length > 0
         ) {
-            return res.status(400).end();
+            res.status(400);
+            res.set('Content-Length', '0');
+            return res.end();
         }
         const fileId = req.params.id;
 
@@ -179,7 +195,9 @@ const getFileById = async (req, res) => {
         const fileRecord = await File.findByPk(fileId);
 
         if (!fileRecord) {
-            return res.status(404).end();
+            res.status(404);
+            res.set('Content-Length', '0');
+            return res.end();
         }
 
         // Return file metadata
@@ -191,7 +209,9 @@ const getFileById = async (req, res) => {
         });
     } catch (error) {
         console.error('Error retrieving file:', error);
-        return res.status(503).end();
+        res.status(503);
+        res.set('Content-Length', '0');
+        return res.end();
     }
 };
 
@@ -204,7 +224,9 @@ const deleteFileById = async (req, res) => {
     );
 
     if (deleteInvalidHeaders.length > 0) {
-        return res.status(400).end();
+        res.status(400);
+        res.set('Content-Length', '0');
+        return res.end();
     }
 
     try {
@@ -219,7 +241,9 @@ const deleteFileById = async (req, res) => {
             // Checks for any query
             Object.keys(req.query).length > 0
         ) {
-            return res.status(400).end();
+            res.status(400);
+            res.set('Content-Length', '0');
+            return res.end();
         }
         const fileId = req.params.id;
 
@@ -227,7 +251,9 @@ const deleteFileById = async (req, res) => {
         const fileRecord = await File.findByPk(fileId);
 
         if (!fileRecord) {
-            return res.status(404).end();
+            res.status(404);
+            res.set('Content-Length', '0');
+            return res.end();
         }
 
         // Extract the key from the URL
@@ -248,17 +274,23 @@ const deleteFileById = async (req, res) => {
             }));
         } catch (s3Error) {
             console.error('S3 deletion error:', s3Error);
-            return res.status(500).end();
+            res.status(500);
+            res.set('Content-Length', '0');
+            return res.end();
         }
 
         // Delete file record from database
         await fileRecord.destroy();
 
         // Return success response with no content
-        return res.status(204).end();
+        res.status(204);
+        res.set('Content-Length', '0');
+        return res.end();
     } catch (error) {
         console.error('Error deleting file:', error);
-        return res.status(503).end();
+        res.status(503);
+        res.set('Content-Length', '0');
+        return res.end();
     }
 };
 

@@ -11,8 +11,6 @@ const app = express();
 app.disable('x-powered-by');
 const PORT = process.env.PORT || 8080;
 
-// Important: Set up middleware in the correct order
-// Body parsing middleware needs to be before routes so that body checking works
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
@@ -21,7 +19,19 @@ app.use((req, res, next) => {
     if ((req.method === 'GET' || req.method === 'DELETE') &&
         (Object.keys(req.body).length > 0 ||
             (req.headers['content-length'] && parseInt(req.headers['content-length']) > 0))) {
-        return res.status(400).json({ error: 'Request body is not allowed for this method' });
+        res.status(400);
+        res.set('Content-Length', '0');
+        return res.end();
+    }
+    next();
+});
+
+// Global middleware to handle HEAD requests
+app.use((req, res, next) => {
+    if (req.method === 'HEAD') {
+        res.status(405);
+        res.set('Content-Length', '0');
+        return res.end();
     }
     next();
 });
@@ -32,7 +42,9 @@ app.use('/v1', fileRoutes);
 
 // Middleware to handle unimplemented routes
 app.use((req, res) => {
-    res.status(404).send();
+    res.status(404);
+    res.set('Content-Length', '0');
+    res.end();
 });
 
 // Ensure database exists before starting
