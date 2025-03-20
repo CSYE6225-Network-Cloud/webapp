@@ -93,7 +93,7 @@ source "googlecompute" "ubuntu" {
 }
 
 build {
-  name = "build-aws"
+  name    = "build-aws"
   sources = ["source.amazon-ebs.ubuntu"]
 
   provisioner "file" {
@@ -122,7 +122,7 @@ build {
 }
 
 build {
-  name = "build-gcp"
+  name    = "build-gcp"
   sources = ["source.googlecompute.ubuntu"]
 
   provisioner "file" {
