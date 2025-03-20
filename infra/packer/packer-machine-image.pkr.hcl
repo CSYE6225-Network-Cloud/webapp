@@ -71,7 +71,7 @@ source "amazon-ebs" "ubuntu" {
   instance_type               = var.instance_type
   ssh_username                = "ubuntu"
   ami_name                    = "csye6225-nodejs-mysql-{{timestamp}}"
-  ami_description             = "Custom image with Node.js binary and MySQL"
+  ami_description             = "Custom image with Node.js binary (RDS-ready)"
   associate_public_ip_address = true
   ssh_timeout                 = "10m"
 
@@ -87,16 +87,14 @@ source "googlecompute" "ubuntu" {
   zone                 = var.gcp_zone
   image_name           = "csye6225-nodejs-mysql-{{timestamp}}"
   image_family         = "custom-images"
-  image_description    = "Custom GCP image with Node.js and MySQL"
+  image_description    = "Custom GCP image with Node.js (RDS-ready)"
   ssh_username         = "ubuntu"
   wait_to_add_ssh_keys = "10s"
 }
 
 build {
-  sources = [
-    "source.amazon-ebs.ubuntu",
-    "source.googlecompute.ubuntu" # Uncommented to build both AWS and GCP images
-  ]
+  name    = "build-aws"
+  sources = ["source.amazon-ebs.ubuntu"]
 
   provisioner "file" {
     source      = "dist/webapp"
@@ -104,7 +102,36 @@ build {
   }
 
   provisioner "file" {
-    source      = "setup.sh"
+    source      = "aws_setup.sh"
+    destination = "/tmp/setup.sh"
+  }
+
+  provisioner "file" {
+    source      = "webapp.service"
+    destination = "/tmp/webapp.service"
+  }
+
+  # Removed user-data-fetcher.sh file provisioner
+
+  provisioner "shell" {
+    inline = [
+      "chmod +x /tmp/setup.sh",
+      "sudo /tmp/setup.sh"
+    ]
+  }
+}
+
+build {
+  name    = "build-gcp"
+  sources = ["source.googlecompute.ubuntu"]
+
+  provisioner "file" {
+    source      = "dist/webapp"
+    destination = "/tmp/webapp"
+  }
+
+  provisioner "file" {
+    source      = "gcp_setup.sh"
     destination = "/tmp/setup.sh"
   }
 

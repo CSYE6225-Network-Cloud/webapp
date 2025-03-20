@@ -7,10 +7,12 @@ ExecStart=/opt/myapp/webapp
 Restart=always
 User=csye6225
 Group=csye6225
-EnvironmentFile=/opt/myapp/.env
 WorkingDirectory=/opt/myapp
 StandardOutput=journal
 StandardError=journal
+
+# Wait for the .env configuration file to be available
+ExecStartPre=/bin/bash -c 'until [ -f /opt/myapp/.env ]; do sleep 2; echo "Waiting for .env configuration file..."; done'
 
 [Install]
 WantedBy=multi-user.target
