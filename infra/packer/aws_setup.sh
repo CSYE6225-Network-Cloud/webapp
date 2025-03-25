@@ -6,85 +6,18 @@ sudo useradd -r -M -g csye6225 -s /usr/sbin/nologin csye6225
 
 echo "Updating system and installing prerequisites..."
 sudo apt-get update -y
-sudo apt-get install -y curl unzip jq python3-pip wget
+sudo apt-get install -y curl unzip jq python3-pip wget snapd
 
-# More robust SSM Agent installation
-echo "Installing SSM Agent using recommended AWS methods..."
-# Amazon Linux 2/Amazon Linux 2023
-if grep -q "Amazon Linux" /etc/os-release 2>/dev/null; then
-  echo "Detected Amazon Linux, installing SSM Agent..."
-  sudo yum install -y amazon-ssm-agent
-  sudo systemctl enable amazon-ssm-agent
-  sudo systemctl start amazon-ssm-agent
-# Ubuntu
-elif grep -q "Ubuntu" /etc/os-release 2>/dev/null; then
-  echo "Detected Ubuntu, installing SSM Agent..."
-  sudo apt-get update
-  sudo apt-get install -y snapd
-  sudo snap install amazon-ssm-agent --classic
-  sudo snap start amazon-ssm-agent
-  sudo systemctl enable snap.amazon-ssm-agent.amazon-ssm-agent.service || true
-  sudo systemctl start snap.amazon-ssm-agent.amazon-ssm-agent.service || true
-# RHEL 8/9 or CentOS
-elif grep -q "Red Hat" /etc/os-release 2>/dev/null || grep -q "CentOS" /etc/os-release 2>/dev/null; then
-  echo "Detected RHEL/CentOS, installing SSM Agent..."
-  sudo yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
-  sudo systemctl enable amazon-ssm-agent
-  sudo systemctl start amazon-ssm-agent
-# Debian
-elif grep -q "Debian" /etc/os-release 2>/dev/null; then
-  echo "Detected Debian, installing SSM Agent..."
-  sudo apt-get update
-  sudo apt-get install -y wget
-  wget https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/debian_amd64/amazon-ssm-agent.deb
-  sudo dpkg -i amazon-ssm-agent.deb
-  sudo systemctl enable amazon-ssm-agent
-  sudo systemctl start amazon-ssm-agent
-  rm amazon-ssm-agent.deb
-else
-  echo "Unknown OS, attempting generic Linux installation..."
-  # Try multiple methods
-  mkdir -p /tmp/ssm
-  cd /tmp/ssm
-  curl "https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm" -o amazon-ssm-agent.rpm
-  curl "https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/debian_amd64/amazon-ssm-agent.deb" -o amazon-ssm-agent.deb
-
-  sudo rpm -i amazon-ssm-agent.rpm 2>/dev/null || sudo dpkg -i amazon-ssm-agent.deb 2>/dev/null || true
-  sudo systemctl enable amazon-ssm-agent || true
-  sudo systemctl start amazon-ssm-agent || true
-
-  cd - > /dev/null
-  rm -rf /tmp/ssm
-fi
+# Ubuntu-specific SSM Agent installation
+echo "Installing SSM Agent for Ubuntu..."
+sudo apt-get update
+sudo snap install amazon-ssm-agent --classic
+sudo snap start amazon-ssm-agent
+sudo systemctl enable snap.amazon-ssm-agent.amazon-ssm-agent.service
+sudo systemctl start snap.amazon-ssm-agent.amazon-ssm-agent.service
 
 # Verify SSM Agent installation and status
-if command -v amazon-ssm-agent &> /dev/null; then
-  echo "SSM Agent binary is installed"
-else
-  echo "SSM Agent binary not found. Checking service status..."
-fi
-
-# Check if service exists and is running
-if systemctl list-unit-files | grep -q amazon-ssm-agent; then
-  echo "SSM Agent service is installed"
-
-  # Get status
-  if systemctl is-active --quiet amazon-ssm-agent; then
-    echo "SSM Agent service is running"
-  else
-    echo "SSM Agent service is installed but not running. Attempting to start..."
-    sudo systemctl start amazon-ssm-agent
-
-    # Check again
-    if systemctl is-active --quiet amazon-ssm-agent; then
-      echo "SSM Agent started successfully"
-    else
-      echo "Failed to start SSM Agent. Logging service status and journal..."
-      sudo systemctl status amazon-ssm-agent
-      sudo journalctl -u amazon-ssm-agent --no-pager -n 50
-    fi
-  fi
-elif systemctl list-unit-files | grep -q snap.amazon-ssm-agent; then
+if systemctl list-unit-files | grep -q snap.amazon-ssm-agent; then
   echo "SSM Agent snap service is installed"
 
   # Get status
@@ -104,42 +37,7 @@ elif systemctl list-unit-files | grep -q snap.amazon-ssm-agent; then
     fi
   fi
 else
-  echo "SSM Agent service not found. Last resort installation attempt..."
-
-  # Set region variable with fallback
-  AWS_REGION=$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region)
-  if [ -z "$AWS_REGION" ] || [ "$AWS_REGION" = "null" ]; then
-    AWS_REGION="us-east-1"  # Default fallback
-    echo "Could not determine region, using default: $AWS_REGION"
-  else
-    echo "Running in AWS region: $AWS_REGION"
-  fi
-
-  # Last resort - try direct download and install
-  mkdir -p /tmp/ssm-last
-  cd /tmp/ssm-last
-
-  wget https://amazon-ssm-${AWS_REGION}.s3.amazonaws.com/latest/linux_amd64/amazon-ssm-agent.rpm || \
-  wget https://amazon-ssm-us-east-1.s3.amazonaws.com/latest/linux_amd64/amazon-ssm-agent.rpm
-
-  if [ -f amazon-ssm-agent.rpm ]; then
-    sudo rpm -i amazon-ssm-agent.rpm || sudo yum install -y ./amazon-ssm-agent.rpm || true
-  fi
-
-  if ! [ -f amazon-ssm-agent.rpm ]; then
-    wget https://amazon-ssm-${AWS_REGION}.s3.amazonaws.com/latest/debian_amd64/amazon-ssm-agent.deb || \
-    wget https://amazon-ssm-us-east-1.s3.amazonaws.com/latest/debian_amd64/amazon-ssm-agent.deb
-
-    if [ -f amazon-ssm-agent.deb ]; then
-      sudo dpkg -i amazon-ssm-agent.deb || sudo apt-get install -y ./amazon-ssm-agent.deb || true
-    fi
-  fi
-
-  sudo systemctl enable amazon-ssm-agent || true
-  sudo systemctl start amazon-ssm-agent || true
-
-  cd - > /dev/null
-  rm -rf /tmp/ssm-last
+  echo "SSM Agent service not found. Installation may have failed."
 fi
 
 echo "Installing AWS CLI v2 using the official method..."
@@ -166,6 +64,244 @@ else
   aws --version
 fi
 
+# Install StatsD for metrics collection
+echo "Installing StatsD for metrics collection..."
+sudo apt-get install -y git build-essential
+git clone https://github.com/statsd/statsd.git /tmp/statsd
+sudo mkdir -p /opt/statsd
+sudo cp -r /tmp/statsd/* /opt/statsd/
+rm -rf /tmp/statsd
+
+# Create StatsD config file
+sudo tee /opt/statsd/config.js > /dev/null << EOF
+{
+  port: 8125,
+  mgmt_port: 8126,
+  percentThreshold: [90, 95, 99],
+  flushInterval: 60000,
+  backends: ["./backends/console", "./backends/cloudwatch"],
+  cloudwatch: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    region: "${AWS_REGION:-us-east-1}",
+    namespace: "WebApp/Metrics",
+    dimensions: [
+      {
+        "InstanceId": "${EC2_INSTANCE_ID}",
+        "Environment": "${ENVIRONMENT:-production}"
+      }
+    ]
+  }
+}
+EOF
+
+# Create StatsD systemd service file
+sudo tee /etc/systemd/system/statsd.service > /dev/null << EOF
+[Unit]
+Description=StatsD metrics collection daemon
+After=network.target
+
+[Service]
+Type=simple
+User=csye6225
+Group=csye6225
+WorkingDirectory=/opt/statsd
+ExecStart=/usr/bin/node /opt/statsd/stats.js /opt/statsd/config.js
+Restart=always
+RestartSec=10
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=statsd
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+echo "Installing necessary StatsD modules..."
+cd /opt/statsd
+sudo npm install @aws-sdk/client-cloudwatch
+sudo npm install async
+sudo npm install aws-cloudwatch-statsd-backend
+
+# Set proper ownership
+sudo chown -R csye6225:csye6225 /opt/statsd
+
+# Enable and start StatsD service
+sudo systemctl daemon-reload
+sudo systemctl enable statsd
+sudo systemctl start statsd
+
+# Verify StatsD is running
+if systemctl is-active --quiet statsd; then
+  echo "StatsD service is running"
+else
+  echo "Failed to start StatsD. Checking logs..."
+  sudo systemctl status statsd
+  sudo journalctl -u statsd --no-pager -n 30
+fi
+
+# Install CloudWatch Agent for Ubuntu
+echo "Installing AWS CloudWatch Agent for Ubuntu..."
+# Download the CloudWatch agent package
+wget https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+# Install the package
+sudo dpkg -i amazon-cloudwatch-agent.deb
+# Clean up
+rm amazon-cloudwatch-agent.deb
+
+# Create a CloudWatch agent configuration file
+echo "Creating CloudWatch Agent configuration..."
+sudo mkdir -p /opt/aws/amazon-cloudwatch-agent/etc/
+sudo tee /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json > /dev/null << 'EOF'
+{
+  "agent": {
+    "metrics_collection_interval": 60,
+    "run_as_user": "root"
+  },
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {
+            "file_path": "/var/log/syslog",
+            "log_group_name": "syslog",
+            "log_stream_name": "{instance_id}",
+            "retention_in_days": 7
+          },
+          {
+            "file_path": "/opt/myapp/logs/*.log",
+            "log_group_name": "webapp-logs",
+            "log_stream_name": "{instance_id}-{file_name}",
+            "retention_in_days": 7
+          },
+          {
+            "file_path": "/opt/myapp/logs/app.log",
+            "log_group_name": "webapp-application-logs",
+            "log_stream_name": "{instance_id}-application",
+            "retention_in_days": 7
+          },
+          {
+            "file_path": "/opt/myapp/logs/error.log",
+            "log_group_name": "webapp-error-logs",
+            "log_stream_name": "{instance_id}-errors",
+            "retention_in_days": 7
+          },
+          {
+            "file_path": "/opt/myapp/logs/access.log",
+            "log_group_name": "webapp-access-logs",
+            "log_stream_name": "{instance_id}-access",
+            "retention_in_days": 7
+          }
+        ]
+      }
+    }
+  },
+  "metrics": {
+    "metrics_collected": {
+      "statsd": {
+        "service_address": ":8125",
+        "metrics_collection_interval": 60,
+        "metrics_aggregation_interval": 60
+      },
+      "collectd": {
+        "metrics_aggregation_interval": 60
+      },
+      "disk": {
+        "measurement": [
+          "used_percent",
+          "inodes_free"
+        ],
+        "metrics_collection_interval": 60,
+        "resources": [
+          "*"
+        ]
+      },
+      "mem": {
+        "measurement": [
+          "mem_used_percent",
+          "mem_available_percent"
+        ],
+        "metrics_collection_interval": 60
+      },
+      "swap": {
+        "measurement": [
+          "swap_used_percent"
+        ],
+        "metrics_collection_interval": 60
+      },
+      "cpu": {
+        "resources": [
+          "*"
+        ],
+        "measurement": [
+          "cpu_usage_idle",
+          "cpu_usage_iowait",
+          "cpu_usage_user",
+          "cpu_usage_system"
+        ],
+        "totalcpu": true,
+        "metrics_collection_interval": 60
+      }
+    },
+    "append_dimensions": {
+      "AutoScalingGroupName": "${aws:AutoScalingGroupName}",
+      "ImageId": "${aws:ImageId}",
+      "InstanceId": "${aws:InstanceId}",
+      "InstanceType": "${aws:InstanceType}"
+    },
+    "aggregation_dimensions": [
+      ["InstanceId"],
+      ["AutoScalingGroupName"],
+      []
+    ]
+  }
+}
+EOF
+
+# Ensure the logs directory exists with proper permissions
+sudo mkdir -p /opt/myapp/logs
+sudo touch /opt/myapp/logs/app.log
+sudo touch /opt/myapp/logs/error.log
+sudo touch /opt/myapp/logs/access.log
+sudo chown -R csye6225:csye6225 /opt/myapp/logs
+sudo chmod -R 750 /opt/myapp/logs
+
+# Enable and start the CloudWatch agent service
+echo "Enabling and starting CloudWatch Agent..."
+sudo systemctl enable amazon-cloudwatch-agent
+sudo systemctl start amazon-cloudwatch-agent
+
+# Verify CloudWatch Agent installation and status
+if systemctl list-unit-files | grep -q amazon-cloudwatch-agent; then
+  echo "CloudWatch Agent service is installed"
+
+  # Get status
+  if systemctl is-active --quiet amazon-cloudwatch-agent; then
+    echo "CloudWatch Agent service is running"
+  else
+    echo "CloudWatch Agent service is installed but not running. Attempting to start..."
+    sudo systemctl start amazon-cloudwatch-agent
+
+    # Check again
+    if systemctl is-active --quiet amazon-cloudwatch-agent; then
+      echo "CloudWatch Agent started successfully"
+    else
+      echo "Failed to start CloudWatch Agent. Logging service status and journal..."
+      sudo systemctl status amazon-cloudwatch-agent
+      sudo journalctl -u amazon-cloudwatch-agent --no-pager -n 50
+    fi
+  fi
+else
+  echo "WARNING: CloudWatch Agent service not found. Checking for binary..."
+  if command -v amazon-cloudwatch-agent-ctl &> /dev/null; then
+    echo "CloudWatch Agent binary found. Starting manually..."
+    sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a start
+  else
+    echo "CRITICAL ERROR: CloudWatch Agent binary not found. Installation failed."
+  fi
+fi
+
 echo "Creating application directories..."
 sudo mkdir -p /opt/webapp
 sudo mkdir -p /opt/myapp
@@ -187,15 +323,22 @@ else
   fi
 fi
 
+
 echo "Setting ownership of application files..."
 sudo chown -R csye6225:csye6225 /opt/webapp
 sudo chown -R csye6225:csye6225 /opt/myapp
 sudo chmod -R 750 /opt/webapp
 sudo chmod -R 750 /opt/myapp
 
-# Ensure the systemd service directory exists
+# Create a service override to ensure CloudWatch agent and StatsD start together with webapp
+echo "Creating service dependencies..."
 sudo mkdir -p /etc/systemd/system/webapp.service.d/
 sudo chmod 755 /etc/systemd/system/webapp.service.d/
+sudo tee /etc/systemd/system/webapp.service.d/override.conf > /dev/null << EOF
+[Unit]
+After=network.target amazon-cloudwatch-agent.service statsd.service
+Wants=amazon-cloudwatch-agent.service statsd.service
+EOF
 
 echo "Reloading systemd configuration..."
 sudo systemctl daemon-reload

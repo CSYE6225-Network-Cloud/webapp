@@ -16,7 +16,10 @@
     "sequelize": "^6.32.1",
     "multer": "^1.4.5-lts.1",
     "uuid": "^9.0.1",
-    "@aws-sdk/client-s3": "^3.540.0"
+    "@aws-sdk/client-s3": "^3.540.0",
+    "winston": "^3.11.0",
+    "winston-cloudwatch": "^6.2.0",
+    "hot-shots": "^10.0.0"
   },
   "devDependencies": {
     "nodemon": "^2.0.22",
