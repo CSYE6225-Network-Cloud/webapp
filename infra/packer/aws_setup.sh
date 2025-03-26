@@ -26,209 +26,39 @@ if systemctl list-unit-files | grep -q snap.amazon-ssm-agent; then
   else
     echo "SSM Agent snap service is installed but not running. Attempting to start..."
     sudo systemctl start snap.amazon-ssm-agent.amazon-ssm-agent.service
-
-    # Check again
-    if systemctl is-active --quiet snap.amazon-ssm-agent.amazon-ssm-agent.service; then
-      echo "SSM Agent snap service started successfully"
-    else
-      echo "Failed to start SSM Agent snap service. Logging service status and journal..."
-      sudo systemctl status snap.amazon-ssm-agent.amazon-ssm-agent.service
-      sudo journalctl -u snap.amazon-ssm-agent.amazon-ssm-agent.service --no-pager -n 50
-    fi
   fi
 else
   echo "SSM Agent service not found. Installation may have failed."
 fi
 
-echo "Installing AWS CLI v2 using the official method..."
+echo "Installing AWS CLI v2..."
 curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
 unzip -q awscliv2.zip
 sudo ./aws/install
 rm -rf aws awscliv2.zip
 
-# Verify AWS CLI is installed
-if ! command -v aws &> /dev/null; then
-  echo "ERROR: AWS CLI v2 installation failed. Trying pip installation as fallback..."
-  sudo pip3 install awscli --upgrade
+# Get region and instance ID
+AWS_REGION=$(curl -s --connect-timeout 5 http://169.254.169.254/latest/meta-data/placement/region || echo "us-east-1")
+EC2_INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id || echo "unknown-instance")
 
-  # Verify pip installation
-  if ! command -v aws &> /dev/null; then
-    echo "CRITICAL ERROR: All AWS CLI installation methods failed. Setup cannot continue."
-    exit 1
-  else
-    echo "AWS CLI installed successfully via pip"
-  fi
-else
-  echo "AWS CLI v2 installed successfully"
-  # Output version info for verification
-  aws --version
-fi
-
-# Install StatsD for metrics collection
-echo "Installing StatsD for metrics collection..."
-sudo apt-get install -y git build-essential
-git clone https://github.com/statsd/statsd.git /tmp/statsd
-sudo mkdir -p /opt/statsd
-sudo cp -r /tmp/statsd/* /opt/statsd/
-rm -rf /tmp/statsd
-
-# Make sure Node.js is installed
-echo "Checking for Node.js installation..."
-if ! command -v node &> /dev/null; then
-  echo "Node.js not found. Installing Node.js..."
-  # For Ubuntu/Debian
-  curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-  sudo apt-get install -y nodejs
-
-  # Verify installation
-  if command -v node &> /dev/null; then
-    echo "Node.js installed successfully: $(node --version)"
-  else
-    echo "ERROR: Node.js installation failed. StatsD may not work properly."
-  fi
-else
-  echo "Node.js is already installed: $(node --version)"
-fi
-
-# Try multiple methods to determine the region and instance ID
-AWS_REGION=$(curl -s --connect-timeout 5 http://169.254.169.254/latest/meta-data/placement/region)
-if [ -z "$AWS_REGION" ] || [ "$AWS_REGION" = "null" ]; then
-  # Fallback to the document method
-  AWS_REGION=$(curl -s --connect-timeout 5 http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region)
-
-  if [ -z "$AWS_REGION" ] || [ "$AWS_REGION" = "null" ]; then
-    # Last resort - default to us-east-1
-    AWS_REGION="us-east-1"
-    echo "Could not determine region after multiple attempts, using default: $AWS_REGION"
-  else
-    echo "Running in AWS region (determined from instance document): $AWS_REGION"
-  fi
-else
-  echo "Running in AWS region (determined from metadata): $AWS_REGION"
-fi
-
-# Get the EC2 instance ID
-EC2_INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
-if [ -z "$EC2_INSTANCE_ID" ] || [ "$EC2_INSTANCE_ID" = "null" ]; then
-  EC2_INSTANCE_ID="unknown-instance"
-  echo "Could not determine EC2 instance ID, using placeholder: $EC2_INSTANCE_ID"
-else
-  echo "Running on EC2 instance: $EC2_INSTANCE_ID"
-fi
-
-# Create StatsD config file - UPDATED to use console backend only
-sudo tee /opt/statsd/config.js > /dev/null << EOF
-{
-  port: 8125,
-  mgmt_port: 8126,
-  percentThreshold: [90, 95, 99],
-  flushInterval: 60000,
-  backends: ["./backends/console"],
-  debug: true
-}
-EOF
-
-# Create StatsD systemd service file - UPDATED for standard journal output
-sudo tee /etc/systemd/system/statsd.service > /dev/null << EOF
-[Unit]
-Description=StatsD metrics collection daemon
-After=network.target
-
-[Service]
-Type=simple
-User=csye6225
-Group=csye6225
-WorkingDirectory=/opt/statsd
-ExecStart=/usr/bin/node /opt/statsd/stats.js /opt/statsd/config.js
-Restart=always
-RestartSec=10
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=statsd
-Environment=NODE_ENV=production
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-echo "Installing necessary StatsD modules..."
-cd /opt/statsd
-sudo npm install async
-sudo npm install
-
-# Set proper ownership
-sudo chown -R csye6225:csye6225 /opt/statsd
-
-# Enable and start StatsD service
-sudo systemctl daemon-reload
-sudo systemctl enable statsd
-sudo systemctl start statsd
-
-# Verify StatsD is running
-if systemctl is-active --quiet statsd; then
-  echo "StatsD service is running"
-else
-  echo "Failed to start StatsD. Checking logs..."
-  sudo systemctl status statsd
-  sudo journalctl -u statsd --no-pager -n 30
-fi
+echo "Running in AWS region: $AWS_REGION on EC2 instance: $EC2_INSTANCE_ID"
 
 # Install CloudWatch Agent for Ubuntu
 echo "Installing AWS CloudWatch Agent for Ubuntu..."
-# Download the CloudWatch agent package
 wget https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
-# Install the package
 sudo dpkg -i amazon-cloudwatch-agent.deb
-# Clean up
 rm amazon-cloudwatch-agent.deb
 
-# Create a CloudWatch agent configuration file with updated config
+# Create a CloudWatch agent configuration file with just StatsD metrics
 echo "Creating CloudWatch Agent configuration..."
 sudo mkdir -p /opt/aws/amazon-cloudwatch-agent/etc/
+
+# Create the configuration file specifically for timer and count metrics
 sudo tee /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json > /dev/null << 'EOF'
 {
   "agent": {
     "metrics_collection_interval": 60,
-    "run_as_user": "root",
-    "debug": true
-  },
-  "logs": {
-    "logs_collected": {
-      "files": {
-        "collect_list": [
-          {
-            "file_path": "/var/log/syslog",
-            "log_group_name": "syslog",
-            "log_stream_name": "{instance_id}",
-            "retention_in_days": 7
-          },
-          {
-            "file_path": "/opt/myapp/logs/*.log",
-            "log_group_name": "webapp-logs",
-            "log_stream_name": "{instance_id}-{file_name}",
-            "retention_in_days": 7
-          },
-          {
-            "file_path": "/opt/myapp/logs/app.log",
-            "log_group_name": "webapp-application-logs",
-            "log_stream_name": "{instance_id}-application",
-            "retention_in_days": 7
-          },
-          {
-            "file_path": "/opt/myapp/logs/error.log",
-            "log_group_name": "webapp-error-logs",
-            "log_stream_name": "{instance_id}-errors",
-            "retention_in_days": 7
-          },
-          {
-            "file_path": "/opt/myapp/logs/access.log",
-            "log_group_name": "webapp-access-logs",
-            "log_stream_name": "{instance_id}-access",
-            "retention_in_days": 7
-          }
-        ]
-      }
-    }
+    "run_as_user": "root"
   },
   "metrics": {
     "metrics_collected": {
@@ -236,32 +66,6 @@ sudo tee /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json > /de
         "service_address": ":8125",
         "metrics_collection_interval": 60,
         "metrics_aggregation_interval": 60
-      },
-      "disk": {
-        "measurement": [
-          "used_percent"
-        ],
-        "metrics_collection_interval": 60,
-        "resources": [
-          "*"
-        ]
-      },
-      "mem": {
-        "measurement": [
-          "mem_used_percent"
-        ],
-        "metrics_collection_interval": 60
-      },
-      "cpu": {
-        "resources": [
-          "*"
-        ],
-        "measurement": [
-          "cpu_usage_idle",
-          "cpu_usage_system"
-        ],
-        "totalcpu": true,
-        "metrics_collection_interval": 60
       }
     },
     "append_dimensions": {
@@ -270,6 +74,19 @@ sudo tee /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json > /de
   }
 }
 EOF
+
+# Verify the configuration file exists
+if [ -f /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json ]; then
+  echo "CloudWatch Agent configuration file created successfully"
+else
+  echo "ERROR: Failed to create CloudWatch Agent configuration file - retrying"
+  # Retry with direct echo method
+  sudo mkdir -p /opt/aws/amazon-cloudwatch-agent/etc/
+  sudo bash -c 'echo "{\"agent\":{\"metrics_collection_interval\":60,\"run_as_user\":\"root\"},\"metrics\":{\"metrics_collected\":{\"statsd\":{\"service_address\":\":8125\",\"metrics_collection_interval\":60,\"metrics_aggregation_interval\":60}},\"append_dimensions\":{\"InstanceId\":\"${aws:InstanceId}\"}}}" > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json'
+fi
+
+# Ensure correct permissions
+sudo chmod 644 /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
 
 # Ensure the logs directory exists with proper permissions
 sudo mkdir -p /opt/myapp/logs
@@ -284,55 +101,28 @@ echo "Enabling and starting CloudWatch Agent..."
 sudo systemctl enable amazon-cloudwatch-agent
 sudo systemctl start amazon-cloudwatch-agent
 
-# Verify CloudWatch Agent installation and status
-if systemctl list-unit-files | grep -q amazon-cloudwatch-agent; then
-  echo "CloudWatch Agent service is installed"
-
-  # Get status
-  if systemctl is-active --quiet amazon-cloudwatch-agent; then
-    echo "CloudWatch Agent service is running"
-  else
-    echo "CloudWatch Agent service is installed but not running. Attempting to start..."
-    sudo systemctl start amazon-cloudwatch-agent
-
-    # Check again
-    if systemctl is-active --quiet amazon-cloudwatch-agent; then
-      echo "CloudWatch Agent started successfully"
-    else
-      echo "Failed to start CloudWatch Agent. Logging service status and journal..."
-      sudo systemctl status amazon-cloudwatch-agent
-      sudo journalctl -u amazon-cloudwatch-agent --no-pager -n 50
-    fi
-  fi
+# Verify status
+if systemctl is-active --quiet amazon-cloudwatch-agent; then
+  echo "CloudWatch Agent service is running"
 else
-  echo "WARNING: CloudWatch Agent service not found. Checking for binary..."
-  if command -v amazon-cloudwatch-agent-ctl &> /dev/null; then
-    echo "CloudWatch Agent binary found. Starting manually..."
-    sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a start
-  else
-    echo "CRITICAL ERROR: CloudWatch Agent binary not found. Installation failed."
-  fi
+  echo "Attempting to start CloudWatch Agent with configuration file..."
+  sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+  sudo systemctl restart amazon-cloudwatch-agent
 fi
 
 echo "Creating application directories..."
 sudo mkdir -p /opt/webapp
 sudo mkdir -p /opt/myapp
 
-# Move the webapp from /opt/webapp to /opt/myapp
+# Move the webapp from /opt/webapp to /opt/myapp if it exists
 if [ -f /opt/webapp/webapp ]; then
   echo "Moving webapp from /opt/webapp/webapp to /opt/myapp/..."
   sudo mv /opt/webapp/webapp /opt/myapp/
   sudo chmod +x /opt/myapp/webapp
-else
-  echo "File /opt/webapp/webapp not found. Checking if webapp is in /tmp..."
-  # If the app is in /tmp (from an upload process), move it to /opt/myapp
-  if [ -f /tmp/webapp ]; then
-    echo "Moving webapp from /tmp/webapp to /opt/myapp/..."
-    sudo mv /tmp/webapp /opt/myapp/
-    sudo chmod +x /opt/myapp/webapp
-  else
-    echo "WARNING: webapp executable not found in expected locations."
-  fi
+elif [ -f /tmp/webapp ]; then
+  echo "Moving webapp from /tmp/webapp to /opt/myapp/..."
+  sudo mv /tmp/webapp /opt/myapp/
+  sudo chmod +x /opt/myapp/webapp
 fi
 
 echo "Setting ownership of application files..."
@@ -341,18 +131,18 @@ sudo chown -R csye6225:csye6225 /opt/myapp
 sudo chmod -R 750 /opt/webapp
 sudo chmod -R 750 /opt/myapp
 
-# Create a service override to ensure CloudWatch agent and StatsD start together with webapp
+# Create a service override for dependencies
 echo "Creating service dependencies..."
 sudo mkdir -p /etc/systemd/system/webapp.service.d/
 sudo chmod 755 /etc/systemd/system/webapp.service.d/
 sudo tee /etc/systemd/system/webapp.service.d/override.conf > /dev/null << EOF
 [Unit]
-After=network.target amazon-cloudwatch-agent.service statsd.service
-Wants=amazon-cloudwatch-agent.service statsd.service
+After=network.target amazon-cloudwatch-agent.service
+Wants=amazon-cloudwatch-agent.service
 EOF
 
 echo "Reloading systemd configuration..."
 sudo systemctl daemon-reload
 sudo systemctl enable webapp.service
 
-echo "Setup complete! The application will be configured by Terraform user-data at EC2 launch time."
+echo "Setup complete!"
