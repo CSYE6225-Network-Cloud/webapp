@@ -90,30 +90,48 @@ else
   echo "Node.js is already installed: $(node --version)"
 fi
 
-# Create StatsD config file - FIX: Use the correct backend name
+# Try multiple methods to determine the region and instance ID
+AWS_REGION=$(curl -s --connect-timeout 5 http://169.254.169.254/latest/meta-data/placement/region)
+if [ -z "$AWS_REGION" ] || [ "$AWS_REGION" = "null" ]; then
+  # Fallback to the document method
+  AWS_REGION=$(curl -s --connect-timeout 5 http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region)
+
+  if [ -z "$AWS_REGION" ] || [ "$AWS_REGION" = "null" ]; then
+    # Last resort - default to us-east-1
+    AWS_REGION="us-east-1"
+    echo "Could not determine region after multiple attempts, using default: $AWS_REGION"
+  else
+    echo "Running in AWS region (determined from instance document): $AWS_REGION"
+  fi
+else
+  echo "Running in AWS region (determined from metadata): $AWS_REGION"
+fi
+
+# Get the EC2 instance ID
+EC2_INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+if [ -z "$EC2_INSTANCE_ID" ] || [ "$EC2_INSTANCE_ID" = "null" ]; then
+  EC2_INSTANCE_ID="unknown-instance"
+  echo "Could not determine EC2 instance ID, using placeholder: $EC2_INSTANCE_ID"
+else
+  echo "Running on EC2 instance: $EC2_INSTANCE_ID"
+fi
+
+# Create StatsD config file - UPDATED to use both console and repeater backends
 sudo tee /opt/statsd/config.js > /dev/null << EOF
 {
   port: 8125,
   mgmt_port: 8126,
   percentThreshold: [90, 95, 99],
   flushInterval: 60000,
-  backends: ["./backends/console", "aws-cloudwatch-statsd-backend"],
-  cloudwatch: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    region: "${AWS_REGION:-us-east-1}",
-    namespace: "WebApp/Metrics",
-    dimensions: [
-      {
-        "InstanceId": "${EC2_INSTANCE_ID}",
-        "Environment": "${ENVIRONMENT:-production}"
-      }
-    ]
-  }
+  backends: ["./backends/console", "./backends/repeater"],
+  repeater: [
+    { host: '127.0.0.1', port: 8125 }
+  ],
+  debug: true
 }
 EOF
 
-# Create StatsD systemd service file
+# Create StatsD systemd service file - UPDATED for standard journal output
 sudo tee /etc/systemd/system/statsd.service > /dev/null << EOF
 [Unit]
 Description=StatsD metrics collection daemon
@@ -127,8 +145,8 @@ WorkingDirectory=/opt/statsd
 ExecStart=/usr/bin/node /opt/statsd/stats.js /opt/statsd/config.js
 Restart=always
 RestartSec=10
-StandardOutput=syslog
-StandardError=syslog
+StandardOutput=journal
+StandardError=journal
 SyslogIdentifier=statsd
 Environment=NODE_ENV=production
 
@@ -138,9 +156,8 @@ EOF
 
 echo "Installing necessary StatsD modules..."
 cd /opt/statsd
-sudo npm install @aws-sdk/client-cloudwatch
 sudo npm install async
-sudo npm install aws-cloudwatch-statsd-backend
+sudo npm install
 
 # Set proper ownership
 sudo chown -R csye6225:csye6225 /opt/statsd
@@ -168,7 +185,7 @@ sudo dpkg -i amazon-cloudwatch-agent.deb
 # Clean up
 rm amazon-cloudwatch-agent.deb
 
-# Create a CloudWatch agent configuration file
+# Create a CloudWatch agent configuration file with updated config
 echo "Creating CloudWatch Agent configuration..."
 sudo mkdir -p /opt/aws/amazon-cloudwatch-agent/etc/
 sudo tee /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json > /dev/null << 'EOF'
@@ -220,9 +237,6 @@ sudo tee /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json > /de
       "statsd": {
         "service_address": ":8125",
         "metrics_collection_interval": 60,
-        "metrics_aggregation_interval": 60
-      },
-      "collectd": {
         "metrics_aggregation_interval": 60
       },
       "disk": {
@@ -340,7 +354,6 @@ else
     echo "WARNING: webapp executable not found in expected locations."
   fi
 fi
-
 
 echo "Setting ownership of application files..."
 sudo chown -R csye6225:csye6225 /opt/webapp

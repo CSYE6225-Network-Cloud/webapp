@@ -10,7 +10,6 @@ const trackMetrics = (req, res, next) => {
     // Generate a unique ID for this request if not already present
     req.id = req.id || uuidv4();
 
-    // Start the request timer using createTimer instead of startTimer
     const requestTimer = metricsUtil.createTimer(`api.request.time.${req.method.toLowerCase()}`);
 
     // Get the original end function
