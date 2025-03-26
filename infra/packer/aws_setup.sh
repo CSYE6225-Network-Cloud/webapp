@@ -116,17 +116,14 @@ else
   echo "Running on EC2 instance: $EC2_INSTANCE_ID"
 fi
 
-# Create StatsD config file - UPDATED to use both console and repeater backends
+# Create StatsD config file - UPDATED to use console backend only
 sudo tee /opt/statsd/config.js > /dev/null << EOF
 {
   port: 8125,
   mgmt_port: 8126,
   percentThreshold: [90, 95, 99],
   flushInterval: 60000,
-  backends: ["./backends/console", "./backends/repeater"],
-  repeater: [
-    { host: '127.0.0.1', port: 8125 }
-  ],
+  backends: ["./backends/console"],
   debug: true
 }
 EOF
@@ -192,7 +189,8 @@ sudo tee /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json > /de
 {
   "agent": {
     "metrics_collection_interval": 60,
-    "run_as_user": "root"
+    "run_as_user": "root",
+    "debug": true
   },
   "logs": {
     "logs_collected": {
@@ -241,8 +239,7 @@ sudo tee /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json > /de
       },
       "disk": {
         "measurement": [
-          "used_percent",
-          "inodes_free"
+          "used_percent"
         ],
         "metrics_collection_interval": 60,
         "resources": [
@@ -251,14 +248,7 @@ sudo tee /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json > /de
       },
       "mem": {
         "measurement": [
-          "mem_used_percent",
-          "mem_available_percent"
-        ],
-        "metrics_collection_interval": 60
-      },
-      "swap": {
-        "measurement": [
-          "swap_used_percent"
+          "mem_used_percent"
         ],
         "metrics_collection_interval": 60
       },
@@ -268,8 +258,6 @@ sudo tee /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json > /de
         ],
         "measurement": [
           "cpu_usage_idle",
-          "cpu_usage_iowait",
-          "cpu_usage_user",
           "cpu_usage_system"
         ],
         "totalcpu": true,
@@ -277,16 +265,8 @@ sudo tee /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json > /de
       }
     },
     "append_dimensions": {
-      "AutoScalingGroupName": "${aws:AutoScalingGroupName}",
-      "ImageId": "${aws:ImageId}",
-      "InstanceId": "${aws:InstanceId}",
-      "InstanceType": "${aws:InstanceType}"
-    },
-    "aggregation_dimensions": [
-      ["InstanceId"],
-      ["AutoScalingGroupName"],
-      []
-    ]
+      "InstanceId": "${aws:InstanceId}"
+    }
   }
 }
 EOF
