@@ -18,23 +18,17 @@ const performHealthCheck = async (req, res) => {
     const requestId = uuidv4();
     req.id = requestId;
 
-    // Start API timing
-    const apiTimer = metrics.startTimer('api.healthz.time', {
-        method: req.method,
-        path: '/healthz'
-    });
+    // Start API timing - using createTimer instead of startTimer
+    const apiTimer = metrics.createTimer('api.healthz.time');
 
     // Increment API counter
-    metrics.incrementCounter('api.healthz.count', {
-        method: req.method,
-        path: '/healthz'
-    });
+    metrics.incrementCounter('api.healthz.count');
 
     logger.info('Health check request received', { requestId, method: req.method });
 
     if (req.method === "HEAD") {
         logger.warn('HEAD method not allowed for health check', { requestId });
-        apiTimer.end();
+        metrics.safelyStopTimer(apiTimer); // Use safelyStopTimer instead of timer.end()
         return res.status(405).end();
     }
 
@@ -70,22 +64,19 @@ const performHealthCheck = async (req, res) => {
             hasQuery: Object.keys(req.query).length > 0,
             invalidHeaders: invalidHeaders.length > 0 ? invalidHeaders : undefined
         });
-        apiTimer.end();
+        metrics.safelyStopTimer(apiTimer); // Use safelyStopTimer instead of timer.end()
         return res.status(400).end();
     }
 
     // Insert a new record in the HealthCheck table
     try {
-        await metrics.timeOperation(
-            'db.create_record.time',
-            async () => {
-                await HealthCheck.create();
-            },
-            { requestId, operation: 'create', model: 'HealthCheck' }
-        );
+        // Using trackDbQuery instead of timeOperation
+        await metrics.trackDbQuery('create', 'HealthCheck', async () => {
+            await HealthCheck.create();
+        });
 
         logger.info('Health check successful', { requestId, responseStatus: 200 });
-        apiTimer.end();
+        metrics.safelyStopTimer(apiTimer); // Use safelyStopTimer instead of timer.end()
         return res.status(200).end();
     } catch (error) {
         logger.error('Health check failed', {
@@ -93,7 +84,7 @@ const performHealthCheck = async (req, res) => {
             error: error.message,
             errorStack: error.stack?.split('\n').slice(0, 3).join('\n')
         });
-        apiTimer.end();
+        metrics.safelyStopTimer(apiTimer); // Use safelyStopTimer instead of timer.end()
         return res.status(503).end();
     }
 };

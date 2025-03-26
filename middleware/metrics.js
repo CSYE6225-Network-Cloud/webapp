@@ -1,6 +1,7 @@
 const { v4: uuidv4 } = require('uuid');
 const logger = require('../utils/logger');
-const metrics = require('../utils/metrics');
+// Use a different variable name to avoid circular reference
+const metricsUtil = require('../utils/metrics');
 
 /**
  * Middleware to track metrics for each request
@@ -9,28 +10,21 @@ const trackMetrics = (req, res, next) => {
     // Generate a unique ID for this request if not already present
     req.id = req.id || uuidv4();
 
-    // Start the request timer
-    const requestTimer = metrics.startTimer('api.request.time', {
-        method: req.method,
-        path: req.originalUrl,
-        requestId: req.id
-    });
+    // Start the request timer using createTimer instead of startTimer
+    const requestTimer = metricsUtil.createTimer(`api.request.time.${req.method.toLowerCase()}`);
 
     // Get the original end function
     const originalEnd = res.end;
 
     // Override end function to record metrics before the response is sent
     res.end = function(chunk, encoding) {
-        // End the timer
-        requestTimer.end();
+        // End the timer using safelyStopTimer instead of requestTimer.end()
+        metricsUtil.safelyStopTimer(requestTimer);
 
-        // Record the response status
-        metrics.incrementCounter('api.response.count', {
-            method: req.method,
-            path: req.originalUrl,
-            status: res.statusCode,
-            statusClass: Math.floor(res.statusCode / 100) + 'xx'
-        });
+        // Record the response status using simple string keys instead of objects
+        metricsUtil.incrementCounter(`api.response.count.${req.method.toLowerCase()}`);
+        metricsUtil.incrementCounter(`api.response.status.${res.statusCode}`);
+        metricsUtil.incrementCounter(`api.response.status.${Math.floor(res.statusCode / 100)}xx`);
 
         // Call the original end function
         return originalEnd.apply(this, arguments);

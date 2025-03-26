@@ -82,16 +82,10 @@ const uploadFile = async (req, res) => {
     req.id = requestId;
 
     // Start API timing
-    const apiTimer = metrics.startTimer('api.upload_file.time', {
-        method: 'POST',
-        path: '/v1/file'
-    });
+    const apiTimer = metrics.createTimer('api.upload_file.time');
 
     // Increment API counter
-    metrics.incrementCounter('api.upload_file.count', {
-        method: 'POST',
-        path: '/v1/file'
-    });
+    metrics.incrementCounter('api.upload_file.count');
 
     logger.info('File upload request received', {
         requestId,
@@ -112,7 +106,7 @@ const uploadFile = async (req, res) => {
         });
         res.status(400);
         res.set('Content-Length', '0');
-        apiTimer.end();
+        metrics.safelyStopTimer(apiTimer);
         return res.end();
     }
 
@@ -121,7 +115,7 @@ const uploadFile = async (req, res) => {
             logger.warn('No file in upload request', { requestId });
             res.status(400);
             res.set('Content-Length', '0');
-            apiTimer.end();
+            metrics.safelyStopTimer(apiTimer);
             return res.end();
         }
 
@@ -151,13 +145,9 @@ const uploadFile = async (req, res) => {
 
         try {
             // Use metrics to time S3 operation
-            await metrics.timeOperation(
-                's3.put_object.time',
-                async () => {
-                    await s3Client.send(new PutObjectCommand(uploadParams));
-                },
-                { requestId, bucketName, operation: 'PutObject' }
-            );
+            await metrics.trackS3Operation('PutObject', async () => {
+                await s3Client.send(new PutObjectCommand(uploadParams));
+            });
 
             s3UploadSuccess = true;
             logger.info('File uploaded to S3 successfully', { requestId, fileId, key });
@@ -171,25 +161,21 @@ const uploadFile = async (req, res) => {
             });
             res.status(503);
             res.set('Content-Length', '0');
-            apiTimer.end();
+            metrics.safelyStopTimer(apiTimer);
             return res.end();
         }
 
         // Save file metadata to database
         try {
             // Use metrics to time database operation
-            const fileRecord = await metrics.timeOperation(
-                'db.create_record.time',
-                async () => {
-                    return await File.create({
-                        id: fileId,
-                        file_name: fileName,
-                        url: `${bucketName}/${key}`,
-                        upload_date: new Date().toISOString().split('T')[0]
-                    });
-                },
-                { requestId, operation: 'create', model: 'File' }
-            );
+            const fileRecord = await metrics.trackDbQuery('create', 'File', async () => {
+                return await File.create({
+                    id: fileId,
+                    file_name: fileName,
+                    url: `${bucketName}/${key}`,
+                    upload_date: new Date().toISOString().split('T')[0]
+                });
+            });
 
             logger.info('File metadata saved to database', {
                 requestId,
@@ -210,22 +196,18 @@ const uploadFile = async (req, res) => {
                 requestId,
                 responseStatus: 201
             });
-            apiTimer.end();
+            metrics.safelyStopTimer(apiTimer);
             return;
         } catch (dbError) {
             // If RDS is down, cleanup the S3 object
             if (s3UploadSuccess) {
                 try {
-                    await metrics.timeOperation(
-                        's3.delete_object.time',
-                        async () => {
-                            await s3Client.send(new DeleteObjectCommand({
-                                Bucket: bucketName,
-                                Key: key
-                            }));
-                        },
-                        { requestId, bucketName, operation: 'DeleteObject' }
-                    );
+                    await metrics.trackS3Operation('DeleteObject', async () => {
+                        await s3Client.send(new DeleteObjectCommand({
+                            Bucket: bucketName,
+                            Key: key
+                        }));
+                    });
 
                     logger.info(`Cleaned up S3 object due to database error`, {
                         requestId,
@@ -249,7 +231,7 @@ const uploadFile = async (req, res) => {
             });
             res.status(503);
             res.set('Content-Length', '0');
-            apiTimer.end();
+            metrics.safelyStopTimer(apiTimer);
             return res.end();
         }
     } catch (error) {
@@ -260,7 +242,7 @@ const uploadFile = async (req, res) => {
         });
         res.status(503);
         res.set('Content-Length', '0');
-        apiTimer.end();
+        metrics.safelyStopTimer(apiTimer);
         return res.end();
     }
 };
@@ -271,16 +253,10 @@ const getFileById = async (req, res) => {
     req.id = requestId;
 
     // Start API timing
-    const apiTimer = metrics.startTimer('api.get_file.time', {
-        method: 'GET',
-        path: '/v1/file/:id'
-    });
+    const apiTimer = metrics.createTimer('api.get_file.time');
 
     // Increment API counter
-    metrics.incrementCounter('api.get_file.count', {
-        method: 'GET',
-        path: '/v1/file/:id'
-    });
+    metrics.incrementCounter('api.get_file.count');
 
     logger.info('Get file request received', {
         requestId,
@@ -301,7 +277,7 @@ const getFileById = async (req, res) => {
         });
         res.status(400);
         res.set('Content-Length', '0');
-        apiTimer.end();
+        metrics.safelyStopTimer(apiTimer);
         return res.end();
     }
 
@@ -327,25 +303,21 @@ const getFileById = async (req, res) => {
             });
             res.status(400);
             res.set('Content-Length', '0');
-            apiTimer.end();
+            metrics.safelyStopTimer(apiTimer);
             return res.end();
         }
         const fileId = req.params.id;
 
         // Find the file in database
-        const fileRecord = await metrics.timeOperation(
-            'db.find_record.time',
-            async () => {
-                return await File.findByPk(fileId);
-            },
-            { requestId, operation: 'findByPk', model: 'File', fileId }
-        );
+        const fileRecord = await metrics.trackDbQuery('findByPk', 'File', async () => {
+            return await File.findByPk(fileId);
+        });
 
         if (!fileRecord) {
             logger.warn('File not found', { requestId, fileId });
             res.status(404);
             res.set('Content-Length', '0');
-            apiTimer.end();
+            metrics.safelyStopTimer(apiTimer);
             return res.end();
         }
 
@@ -368,7 +340,7 @@ const getFileById = async (req, res) => {
             requestId,
             responseStatus: 200
         });
-        apiTimer.end();
+        metrics.safelyStopTimer(apiTimer);
         return;
     } catch (error) {
         logger.error('Error retrieving file', {
@@ -379,7 +351,7 @@ const getFileById = async (req, res) => {
         });
         res.status(503);
         res.set('Content-Length', '0');
-        apiTimer.end();
+        metrics.safelyStopTimer(apiTimer);
         return res.end();
     }
 };
@@ -390,16 +362,10 @@ const deleteFileById = async (req, res) => {
     req.id = requestId;
 
     // Start API timing
-    const apiTimer = metrics.startTimer('api.delete_file.time', {
-        method: 'DELETE',
-        path: '/v1/file/:id'
-    });
+    const apiTimer = metrics.createTimer('api.delete_file.time');
 
     // Increment API counter
-    metrics.incrementCounter('api.delete_file.count', {
-        method: 'DELETE',
-        path: '/v1/file/:id'
-    });
+    metrics.incrementCounter('api.delete_file.count');
 
     logger.info('Delete file request received', {
         requestId,
@@ -420,7 +386,7 @@ const deleteFileById = async (req, res) => {
         });
         res.status(400);
         res.set('Content-Length', '0');
-        apiTimer.end();
+        metrics.safelyStopTimer(apiTimer);
         return res.end();
     }
 
@@ -446,25 +412,21 @@ const deleteFileById = async (req, res) => {
             });
             res.status(400);
             res.set('Content-Length', '0');
-            apiTimer.end();
+            metrics.safelyStopTimer(apiTimer);
             return res.end();
         }
         const fileId = req.params.id;
 
         // Find the file in database
-        const fileRecord = await metrics.timeOperation(
-            'db.find_record.time',
-            async () => {
-                return await File.findByPk(fileId);
-            },
-            { requestId, operation: 'findByPk', model: 'File', fileId }
-        );
+        const fileRecord = await metrics.trackDbQuery('findByPk', 'File', async () => {
+            return await File.findByPk(fileId);
+        });
 
         if (!fileRecord) {
             logger.warn('File not found for deletion', { requestId, fileId });
             res.status(404);
             res.set('Content-Length', '0');
-            apiTimer.end();
+            metrics.safelyStopTimer(apiTimer);
             return res.end();
         }
 
@@ -487,16 +449,12 @@ const deleteFileById = async (req, res) => {
 
         // Delete file from S3
         try {
-            await metrics.timeOperation(
-                's3.delete_object.time',
-                async () => {
-                    await s3Client.send(new DeleteObjectCommand({
-                        Bucket: bucketName,
-                        Key: key
-                    }));
-                },
-                { requestId, bucketName, operation: 'DeleteObject', key }
-            );
+            await metrics.trackS3Operation('DeleteObject', async () => {
+                await s3Client.send(new DeleteObjectCommand({
+                    Bucket: bucketName,
+                    Key: key
+                }));
+            });
 
             logger.info('File deleted from S3', { requestId, key });
         } catch (s3Error) {
@@ -509,18 +467,14 @@ const deleteFileById = async (req, res) => {
             });
             res.status(500);
             res.set('Content-Length', '0');
-            apiTimer.end();
+            metrics.safelyStopTimer(apiTimer);
             return res.end();
         }
 
         // Delete file record from database
-        await metrics.timeOperation(
-            'db.delete_record.time',
-            async () => {
-                await fileRecord.destroy();
-            },
-            { requestId, operation: 'destroy', model: 'File', fileId }
-        );
+        await metrics.trackDbQuery('destroy', 'File', async () => {
+            await fileRecord.destroy();
+        });
 
         logger.info('File metadata deleted from database', { requestId, fileId });
 
@@ -531,7 +485,7 @@ const deleteFileById = async (req, res) => {
             requestId,
             responseStatus: 204
         });
-        apiTimer.end();
+        metrics.safelyStopTimer(apiTimer);
         return res.end();
     } catch (error) {
         logger.error('Error deleting file', {
@@ -542,7 +496,7 @@ const deleteFileById = async (req, res) => {
         });
         res.status(503);
         res.set('Content-Length', '0');
-        apiTimer.end();
+        metrics.safelyStopTimer(apiTimer);
         return res.end();
     }
 };

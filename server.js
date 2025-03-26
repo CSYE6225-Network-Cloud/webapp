@@ -47,12 +47,8 @@ app.use((req, res, next) => {
         });
 
         // Track response time as a metric
-        metrics.incrementCounter('api.response.status', {
-            method: req.method,
-            path: req.path,
-            status: res.statusCode,
-            statusClass: Math.floor(res.statusCode / 100) + 'xx'
-        });
+        metrics.incrementCounter(`api.response.status.${res.statusCode}`);
+        metrics.incrementCounter(`api.response.status.${Math.floor(res.statusCode / 100)}xx`);
 
         // Call the original end method
         return originalEnd.call(this, chunk, encoding);
@@ -127,7 +123,7 @@ const startServer = async () => {
         if (process.env.NODE_ENV !== 'test') {
             app.listen(PORT, () => {
                 logger.info(`Server running on port ${PORT}`);
-                metrics.incrementCounter('server.start', { port: PORT });
+                metrics.incrementCounter('server.start');
             });
         }
     } catch (error) {
@@ -142,13 +138,13 @@ const startServer = async () => {
 // Handle graceful shutdown
 process.on('SIGTERM', () => {
     logger.info('SIGTERM received, shutting down gracefully');
-    metrics.incrementCounter('server.shutdown', { signal: 'SIGTERM' });
+    metrics.incrementCounter('server.shutdown.sigterm');
     process.exit(0);
 });
 
 process.on('SIGINT', () => {
     logger.info('SIGINT received, shutting down gracefully');
-    metrics.incrementCounter('server.shutdown', { signal: 'SIGINT' });
+    metrics.incrementCounter('server.shutdown.sigint');
     process.exit(0);
 });
 
