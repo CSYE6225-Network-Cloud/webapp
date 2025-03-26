@@ -49,16 +49,48 @@ wget https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-
 sudo dpkg -i amazon-cloudwatch-agent.deb
 rm amazon-cloudwatch-agent.deb
 
-# Create a CloudWatch agent configuration file with just StatsD metrics
+# Create a CloudWatch agent configuration file with consolidated logging
 echo "Creating CloudWatch Agent configuration..."
 sudo mkdir -p /opt/aws/amazon-cloudwatch-agent/etc/
 
-# Create the configuration file specifically for timer and count metrics
-sudo tee /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json > /dev/null << 'EOF'
+# Create the configuration file with unified logs and StatsD metrics
+sudo tee /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json > /dev/null << EOF
 {
   "agent": {
     "metrics_collection_interval": 60,
     "run_as_user": "root"
+  },
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {
+            "file_path": "/var/log/syslog",
+            "log_group_name": "webapp-logs",
+            "log_stream_name": "${EC2_INSTANCE_ID}-syslog",
+            "retention_in_days": 7
+          },
+          {
+            "file_path": "/opt/myapp/logs/app.log",
+            "log_group_name": "webapp-logs",
+            "log_stream_name": "${EC2_INSTANCE_ID}-app",
+            "retention_in_days": 7
+          },
+          {
+            "file_path": "/opt/myapp/logs/error.log",
+            "log_group_name": "webapp-logs",
+            "log_stream_name": "${EC2_INSTANCE_ID}-error",
+            "retention_in_days": 7
+          },
+          {
+            "file_path": "/opt/myapp/logs/access.log",
+            "log_group_name": "webapp-logs",
+            "log_stream_name": "${EC2_INSTANCE_ID}-access",
+            "retention_in_days": 7
+          }
+        ]
+      }
+    }
   },
   "metrics": {
     "metrics_collected": {
@@ -69,7 +101,7 @@ sudo tee /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json > /de
       }
     },
     "append_dimensions": {
-      "InstanceId": "${aws:InstanceId}"
+      "InstanceId": "${EC2_INSTANCE_ID}"
     }
   }
 }
@@ -82,7 +114,7 @@ else
   echo "ERROR: Failed to create CloudWatch Agent configuration file - retrying"
   # Retry with direct echo method
   sudo mkdir -p /opt/aws/amazon-cloudwatch-agent/etc/
-  sudo bash -c 'echo "{\"agent\":{\"metrics_collection_interval\":60,\"run_as_user\":\"root\"},\"metrics\":{\"metrics_collected\":{\"statsd\":{\"service_address\":\":8125\",\"metrics_collection_interval\":60,\"metrics_aggregation_interval\":60}},\"append_dimensions\":{\"InstanceId\":\"${aws:InstanceId}\"}}}" > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json'
+  sudo bash -c "echo '{\"agent\":{\"metrics_collection_interval\":60,\"run_as_user\":\"root\"},\"logs\":{\"logs_collected\":{\"files\":{\"collect_list\":[{\"file_path\":\"/var/log/syslog\",\"log_group_name\":\"webapp-logs\",\"log_stream_name\":\"${EC2_INSTANCE_ID}-syslog\",\"retention_in_days\":7},{\"file_path\":\"/opt/myapp/logs/app.log\",\"log_group_name\":\"webapp-logs\",\"log_stream_name\":\"${EC2_INSTANCE_ID}-app\",\"retention_in_days\":7},{\"file_path\":\"/opt/myapp/logs/error.log\",\"log_group_name\":\"webapp-logs\",\"log_stream_name\":\"${EC2_INSTANCE_ID}-error\",\"retention_in_days\":7},{\"file_path\":\"/opt/myapp/logs/access.log\",\"log_group_name\":\"webapp-logs\",\"log_stream_name\":\"${EC2_INSTANCE_ID}-access\",\"retention_in_days\":7}]}}},\"metrics\":{\"metrics_collected\":{\"statsd\":{\"service_address\":\":8125\",\"metrics_collection_interval\":60,\"metrics_aggregation_interval\":60}},\"append_dimensions\":{\"InstanceId\":\"${EC2_INSTANCE_ID}\"}}}' > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json"
 fi
 
 # Ensure correct permissions
@@ -131,6 +163,27 @@ sudo chown -R csye6225:csye6225 /opt/myapp
 sudo chmod -R 750 /opt/webapp
 sudo chmod -R 750 /opt/myapp
 
+# Create a standardized .env file with unified log group settings
+echo "Creating environment file with metrics configuration..."
+sudo tee /opt/myapp/.env > /dev/null << EOF
+# Application Settings
+PORT=8080
+NODE_ENV=production
+LOG_LEVEL=info
+
+# Logging and Metrics Configuration
+CLOUDWATCH_GROUP_NAME=webapp-logs
+STATSD_HOST=localhost
+STATSD_PORT=8125
+INSTANCE_ID=${EC2_INSTANCE_ID}
+ENABLE_METRICS=true
+AWS_REGION=${AWS_REGION}
+EOF
+
+# Set proper permissions for the .env file
+sudo chmod 640 /opt/myapp/.env
+sudo chown csye6225:csye6225 /opt/myapp/.env
+
 # Create a service override for dependencies
 echo "Creating service dependencies..."
 sudo mkdir -p /etc/systemd/system/webapp.service.d/
@@ -144,5 +197,17 @@ EOF
 echo "Reloading systemd configuration..."
 sudo systemctl daemon-reload
 sudo systemctl enable webapp.service
+
+# Send a test metric to verify StatsD is working
+if command -v netcat >/dev/null 2>&1 || command -v nc >/dev/null 2>&1; then
+  echo "Sending test metric to StatsD..."
+  echo "test.metric:1|c" | nc -u -w0 127.0.0.1 8125
+  echo "test.timer:100|ms" | nc -u -w0 127.0.0.1 8125
+else
+  echo "Installing netcat for StatsD testing..."
+  sudo apt-get install -y netcat
+  echo "test.metric:1|c" | nc -u -w0 127.0.0.1 8125
+  echo "test.timer:100|ms" | nc -u -w0 127.0.0.1 8125
+fi
 
 echo "Setup complete!"
