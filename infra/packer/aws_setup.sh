@@ -72,14 +72,32 @@ sudo mkdir -p /opt/statsd
 sudo cp -r /tmp/statsd/* /opt/statsd/
 rm -rf /tmp/statsd
 
-# Create StatsD config file
+# Make sure Node.js is installed
+echo "Checking for Node.js installation..."
+if ! command -v node &> /dev/null; then
+  echo "Node.js not found. Installing Node.js..."
+  # For Ubuntu/Debian
+  curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+  sudo apt-get install -y nodejs
+
+  # Verify installation
+  if command -v node &> /dev/null; then
+    echo "Node.js installed successfully: $(node --version)"
+  else
+    echo "ERROR: Node.js installation failed. StatsD may not work properly."
+  fi
+else
+  echo "Node.js is already installed: $(node --version)"
+fi
+
+# Create StatsD config file - FIX: Use the correct backend name
 sudo tee /opt/statsd/config.js > /dev/null << EOF
 {
   port: 8125,
   mgmt_port: 8126,
   percentThreshold: [90, 95, 99],
   flushInterval: 60000,
-  backends: ["./backends/console", "./backends/cloudwatch"],
+  backends: ["./backends/console", "aws-cloudwatch-statsd-backend"],
   cloudwatch: {
     accessKeyId: process.env.AWS_ACCESS_KEY_ID,
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
