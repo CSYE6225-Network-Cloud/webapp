@@ -17,7 +17,22 @@ const allowedHeadersPost = [
     'accept-encoding',
     'connection',
     'content-type',
-    'content-length'
+    'content-length',
+    // Load balancer and proxy headers
+    'x-forwarded-for',
+    'x-forwarded-proto',
+    'x-forwarded-port',
+    'x-forwarded-host',
+    'x-forwarded-path',
+    'x-forwarded-prefix',
+    'x-real-ip',
+    'x-amzn-trace-id',
+    'x-amz-cf-id',
+    'cdn-loop',
+    'via',
+    'true-client-ip',
+    'x-correlation-id',
+    'forwarded'
 ];
 
 const allowedHeadersGet = [
@@ -27,7 +42,22 @@ const allowedHeadersGet = [
     'user-agent',
     'accept',
     'accept-encoding',
-    'connection'
+    'connection',
+    // Load balancer and proxy headers
+    'x-forwarded-for',
+    'x-forwarded-proto',
+    'x-forwarded-port',
+    'x-forwarded-host',
+    'x-forwarded-path',
+    'x-forwarded-prefix',
+    'x-real-ip',
+    'x-amzn-trace-id',
+    'x-amz-cf-id',
+    'cdn-loop',
+    'via',
+    'true-client-ip',
+    'x-correlation-id',
+    'forwarded'
 ];
 
 // Configure AWS S3

@@ -11,6 +11,21 @@ const allowedHeaders = [
     'accept',
     'accept-encoding',
     'connection',
+    // Load balancer and proxy headers
+    'x-forwarded-for',
+    'x-forwarded-proto',
+    'x-forwarded-port',
+    'x-forwarded-host',
+    'x-forwarded-path',
+    'x-forwarded-prefix',
+    'x-real-ip',
+    'x-amzn-trace-id',
+    'x-amz-cf-id',
+    'cdn-loop',
+    'via',
+    'true-client-ip',
+    'x-correlation-id',
+    'forwarded'
 ];
 
 // Controller function for /healthz
