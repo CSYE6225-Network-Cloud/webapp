@@ -95,8 +95,8 @@ app.use((req, res, next) => {
     next();
 });
 
-// Use the routes
-app.use('/', healthzRoutes);
+// Updated: Mount healthz routes at /healthz instead of /
+app.use('/healthz', healthzRoutes);
 app.use('/v1', fileRoutes);
 
 // Middleware to handle unimplemented routes
