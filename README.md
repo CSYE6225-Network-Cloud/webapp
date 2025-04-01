@@ -12,7 +12,7 @@ This Node.js application provides two main APIs:
 The Health Check API provides an endpoint (`/healthz`) that can be used to monitor the health of the application instance. The endpoint ensures that:
 - The application can successfully interact with the database.
 - It rejects any request with a body (JSON, form-data, raw, binary, GraphQL, etc.).
-- It returns appropriate HTTP status codes based on the health check results.
+- It returns appropriate HTTP status codes based on the health check result.
 
 ### Features
 1. Validates incoming requests to ensure:
