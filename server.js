@@ -95,8 +95,7 @@ app.use((req, res, next) => {
     next();
 });
 
-// Updated: Mount healthz routes at /healthz instead of /
-app.use('/healthz', healthzRoutes);
+app.use(healthzRoutes);
 app.use('/v1', fileRoutes);
 
 // Middleware to handle unimplemented routes
@@ -153,4 +152,4 @@ if (process.env.NODE_ENV !== 'test') {
     startServer();
 }
 
-module.exports = app;
+module.exports = app
