@@ -3,10 +3,20 @@ const { createLogger, format, transports } = winston;
 const WinstonCloudWatch = require('winston-cloudwatch');
 const { v4: uuidv4 } = require('uuid');
 
+// Custom format to filter out debug logs in non-development environments
+const environmentFilter = format((info) => {
+    // In non-development environments, skip debug logs
+    if (info.level === 'debug' && process.env.NODE_ENV !== 'development') {
+        return false;
+    }
+    return info;
+});
+
 // Create environment-dependent logger
 const logger = createLogger({
     level: process.env.LOG_LEVEL || 'info',
     format: format.combine(
+        environmentFilter(),
         format.timestamp(),
         format.json()
     ),
@@ -37,6 +47,15 @@ if (process.env.NODE_ENV !== 'development' && process.env.NODE_ENV !== 'test') {
     }));
 
     logger.info(`Logger initialized with CloudWatch log group: ${logGroupName}`);
+} else {
+    // In development mode, inform that debug logs are enabled
+    logger.info('Debug logging enabled in development mode');
 }
+
+// Add a helper method to check if debug logging is active
+// This can be useful to avoid expensive string operations when debug won't be logged
+logger.isDebugEnabled = () => {
+    return process.env.NODE_ENV === 'development' && logger.levels[logger.level] >= logger.levels['debug'];
+};
 
 module.exports = logger;
