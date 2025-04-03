@@ -1,6 +1,5 @@
 const express = require('express');
 const dotenv = require('dotenv');
-const { v4: uuidv4 } = require('uuid');
 const { sequelize, createDatabaseIfNotExists } = require('./db.js');
 const healthzRoutes = require('./routes/healthz.js');
 const fileRoutes = require('./routes/file.js');
@@ -14,19 +13,27 @@ const app = express();
 app.disable('x-powered-by');
 const PORT = process.env.PORT || 8080;
 
-// Request logging middleware
-app.use((req, res, next) => {
-    // Assign a unique ID to each request if not already assigned
-    req.id = req.id || uuidv4();
+// Define paths to ignore in logging (health checks, etc.)
+const IGNORE_LOG_PATHS = [
+    '/',               // Root path (AWS health checks)
+    '/favicon.ico',    // Browser favicon requests
+    '/robots.txt'      // Search engine requests
+];
 
-    // Log request details
-    logger.info('Incoming request', {
-        requestId: req.id,
-        method: req.method,
-        path: req.path,
-        ip: req.ip,
-        userAgent: req.get('user-agent')
-    });
+// Request logging middleware with filtering (without request ID generation)
+app.use((req, res, next) => {
+    // Skip logging for health checks and other ignored paths
+    const shouldLogRequest = !IGNORE_LOG_PATHS.includes(req.path);
+
+    // Log request details (only for non-ignored paths)
+    if (shouldLogRequest) {
+        logger.info('Incoming request', {
+            method: req.method,
+            path: req.path,
+            ip: req.ip,
+            userAgent: req.get('user-agent')
+        });
+    }
 
     // Start tracking response time
     const startTime = Date.now();
@@ -37,16 +44,17 @@ app.use((req, res, next) => {
         // Calculate response time
         const responseTime = Date.now() - startTime;
 
-        // Log response details
-        logger.info('Response sent', {
-            requestId: req.id,
-            method: req.method,
-            path: req.path,
-            statusCode: res.statusCode,
-            responseTime
-        });
+        // Log response details (only for non-ignored paths)
+        if (shouldLogRequest) {
+            logger.info('Response sent', {
+                method: req.method,
+                path: req.path,
+                statusCode: res.statusCode,
+                responseTime
+            });
+        }
 
-        // Track response time as a metric
+        // Always track metrics (even for ignored paths)
         metrics.incrementCounter(`api.response.status.${res.statusCode}`);
         metrics.incrementCounter(`api.response.status.${Math.floor(res.statusCode / 100)}xx`);
 
@@ -66,12 +74,14 @@ app.use((req, res, next) => {
         (Object.keys(req.body).length > 0 ||
             (req.headers['content-length'] && parseInt(req.headers['content-length']) > 0))) {
 
-        logger.warn('Body content detected in GET/DELETE request', {
-            requestId: req.id,
-            method: req.method,
-            path: req.path,
-            contentLength: req.headers['content-length']
-        });
+        // Only log warnings for non-ignored paths
+        if (!IGNORE_LOG_PATHS.includes(req.path)) {
+            logger.warn('Body content detected in GET/DELETE request', {
+                method: req.method,
+                path: req.path,
+                contentLength: req.headers['content-length']
+            });
+        }
 
         res.status(400);
         res.set('Content-Length', '0');
@@ -83,10 +93,12 @@ app.use((req, res, next) => {
 // Global middleware to handle HEAD requests
 app.use((req, res, next) => {
     if (req.method === 'HEAD') {
-        logger.warn('HEAD method not allowed', {
-            requestId: req.id,
-            path: req.path
-        });
+        // Only log warnings for non-ignored paths
+        if (!IGNORE_LOG_PATHS.includes(req.path)) {
+            logger.warn('HEAD method not allowed', {
+                path: req.path
+            });
+        }
 
         res.status(405);
         res.set('Content-Length', '0');
@@ -95,17 +107,25 @@ app.use((req, res, next) => {
     next();
 });
 
-// Use the routes
-app.use('/', healthzRoutes);
+// Add a simple handler for root path to avoid 404s on health checks
+app.get('/', (req, res) => {
+    res.status(200);
+    res.set('Content-Length', '0');
+    return res.end();
+});
+
+app.use(healthzRoutes);
 app.use('/v1', fileRoutes);
 
 // Middleware to handle unimplemented routes
 app.use((req, res) => {
-    logger.warn('Route not found', {
-        requestId: req.id,
-        method: req.method,
-        path: req.path
-    });
+    // Only log warnings for non-ignored paths
+    if (!IGNORE_LOG_PATHS.includes(req.path)) {
+        logger.warn('Route not found', {
+            method: req.method,
+            path: req.path
+        });
+    }
 
     res.status(404);
     res.set('Content-Length', '0');
