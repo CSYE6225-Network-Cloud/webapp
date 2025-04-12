@@ -1,7 +1,7 @@
 name: Build Packer AMI and GCP Machine Image with Deployment
 
 on:
-  push:
+  pull_request:
     branches:
       - main
   workflow_dispatch:
