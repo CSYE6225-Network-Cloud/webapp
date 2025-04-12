@@ -1,7 +1,7 @@
 name: Build Packer AMI and GCP Machine Image with Deployment
 
 on:
-  pull_request:
+  push:
     branches:
       - main
   workflow_dispatch:
@@ -362,10 +362,10 @@ jobs:
           
           # Final check
           if [ "$STATUS" == "Successful" ]; then
-            echo "✅ Instance refresh completed successfully!"
+            echo "Instance refresh completed successfully!"
           else
             REASON=$(echo $REFRESH | jq -r '.StatusReason')
-            echo "❌ Instance refresh failed with status: $STATUS"
+            echo "Instance refresh failed with status: $STATUS"
             echo "Reason: $REASON"
             exit 1
           fi
