@@ -1,9 +1,10 @@
-name: Build Packer AMI and GCP Machine Image
+name: Build Packer AMI and GCP Machine Image with Deployment
 
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   build_images:
@@ -174,6 +175,200 @@ jobs:
           export AWS_SECRET_ACCESS_KEY=${{ secrets.DEMO_AWS_SECRET_ACCESS_KEY }}
           
           aws ec2 describe-images --owners self --query 'Images[*].[ImageId,Name,CreationDate]' --output table | head -n 10
+          
+          # Store AMI ID for later
+          LATEST_AMI_ID=$(aws ec2 describe-images --owners self --filters "Name=name,Values=Copied-csye6225-nodejs-mysql-*" --query 'sort_by(Images, &CreationDate)[-1].ImageId' --output text)
+          echo "LATEST_AMI_ID=${LATEST_AMI_ID}" >> $GITHUB_ENV
+          echo "Latest AMI ID: ${LATEST_AMI_ID}"
+
+  deploy_ami:
+    name: Deploy AMI to Auto Scaling Group
+    needs: build_images
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS DEMO Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.DEMO_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.DEMO_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Get Latest AMI ID
+        id: get-ami
+        run: |
+          # Get latest AMI with the naming pattern
+          LATEST_AMI=$(aws ec2 describe-images \
+            --owners self \
+            --filters "Name=name,Values=Copied-csye6225-nodejs-mysql-*" \
+            --query 'sort_by(Images, &CreationDate)[-1]' \
+            --output json)
+          
+          # Extract AMI ID and creation date
+          AMI_ID=$(echo $LATEST_AMI | jq -r '.ImageId')
+          CREATION_DATE=$(echo $LATEST_AMI | jq -r '.CreationDate')
+          
+          if [ -z "$AMI_ID" ] || [ "$AMI_ID" == "null" ]; then
+            echo "No AMI found. Exiting."
+            exit 1
+          fi
+          
+          echo "Latest AMI ID: $AMI_ID (created: $CREATION_DATE)"
+          echo "ami_id=$AMI_ID" >> $GITHUB_OUTPUT
+
+      - name: Get Launch Template
+        id: get-launch-template
+        run: |
+          # You can filter by tag or just list all and pick the first one
+          # Adjust the filter as needed for your specific Launch Template
+          LAUNCH_TEMPLATES=$(aws ec2 describe-launch-templates \
+            --query 'LaunchTemplates[*].[LaunchTemplateId,LaunchTemplateName,DefaultVersionNumber,LatestVersionNumber]' \
+            --output json)
+          
+          echo "Available Launch Templates:"
+          echo "$LAUNCH_TEMPLATES" | jq -r '.[] | "ID: \(.[0]), Name: \(.[1]), Default Version: \(.[2]), Latest Version: \(.[3])"'
+          
+          # Pick the first Launch Template (you may want to add better filtering here)
+          TEMPLATE_ID=$(echo "$LAUNCH_TEMPLATES" | jq -r '.[0][0]')
+          TEMPLATE_NAME=$(echo "$LAUNCH_TEMPLATES" | jq -r '.[0][1]')
+          LATEST_VERSION=$(echo "$LAUNCH_TEMPLATES" | jq -r '.[0][3]')
+          
+          if [ -z "$TEMPLATE_ID" ] || [ "$TEMPLATE_ID" == "null" ]; then
+            echo "No Launch Template found. Exiting."
+            exit 1
+          fi
+          
+          echo "Using Launch Template: $TEMPLATE_NAME (ID: $TEMPLATE_ID), Latest Version: $LATEST_VERSION"
+          echo "template_id=$TEMPLATE_ID" >> $GITHUB_OUTPUT
+          echo "template_name=$TEMPLATE_NAME" >> $GITHUB_OUTPUT
+          echo "latest_version=$LATEST_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create new Launch Template version
+        id: create-lt-version
+        run: |
+          TEMPLATE_ID="${{ steps.get-launch-template.outputs.template_id }}"
+          TEMPLATE_NAME="${{ steps.get-launch-template.outputs.template_name }}"
+          LATEST_VERSION="${{ steps.get-launch-template.outputs.latest_version }}"
+          AMI_ID="${{ steps.get-ami.outputs.ami_id }}"
+          
+          echo "Getting current template version details..."
+          CURRENT_TEMPLATE=$(aws ec2 describe-launch-template-versions \
+            --launch-template-id $TEMPLATE_ID \
+            --versions $LATEST_VERSION \
+            --query 'LaunchTemplateVersions[0].LaunchTemplateData' \
+            --output json)
+          
+          echo "Current template uses AMI: $(echo $CURRENT_TEMPLATE | jq -r '.ImageId')"
+          
+          # Create a temporary JSON file with the updated template
+          echo "Creating updated template with new AMI ID: $AMI_ID"
+          NEW_TEMPLATE=$(echo $CURRENT_TEMPLATE | jq --arg ami "$AMI_ID" '.ImageId = $ami')
+          echo "$NEW_TEMPLATE" > new_template.json
+          
+          # Create the new version
+          NEW_VERSION_RESULT=$(aws ec2 create-launch-template-version \
+            --launch-template-id $TEMPLATE_ID \
+            --version-description "Automated update with AMI $AMI_ID" \
+            --launch-template-data file://new_template.json \
+            --output json)
+          
+          NEW_VERSION=$(echo $NEW_VERSION_RESULT | jq -r '.LaunchTemplateVersion.VersionNumber')
+          echo "Created new Launch Template version: $NEW_VERSION"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          
+          # Clean up
+          rm -f new_template.json
+
+      - name: Get Auto Scaling Group
+        id: get-asg
+        run: |
+          # Find the Auto Scaling Group using this Launch Template
+          ASGS=$(aws autoscaling describe-auto-scaling-groups \
+            --query "AutoScalingGroups[?LaunchTemplate.LaunchTemplateId=='${{ steps.get-launch-template.outputs.template_id }}']" \
+            --output json)
+          
+          # Get the first ASG (adjust if you have multiple)
+          ASG_NAME=$(echo $ASGS | jq -r '.[0].AutoScalingGroupName')
+          
+          if [ -z "$ASG_NAME" ] || [ "$ASG_NAME" == "null" ]; then
+            echo "No Auto Scaling Group found using this Launch Template. Exiting."
+            exit 1
+          fi
+          
+          echo "Found Auto Scaling Group: $ASG_NAME"
+          echo "asg_name=$ASG_NAME" >> $GITHUB_OUTPUT
+
+      - name: Update Auto Scaling Group
+        run: |
+          ASG_NAME="${{ steps.get-asg.outputs.asg_name }}"
+          TEMPLATE_ID="${{ steps.get-launch-template.outputs.template_id }}"
+          NEW_VERSION="${{ steps.create-lt-version.outputs.new_version }}"
+          
+          echo "Updating Auto Scaling Group to use new Launch Template version..."
+          aws autoscaling update-auto-scaling-group \
+            --auto-scaling-group-name $ASG_NAME \
+            --launch-template LaunchTemplateId=$TEMPLATE_ID,Version=$NEW_VERSION
+          
+          echo "Updated Auto Scaling Group to use Launch Template version $NEW_VERSION"
+
+      - name: Start Instance Refresh
+        id: refresh
+        run: |
+          ASG_NAME="${{ steps.get-asg.outputs.asg_name }}"
+          
+          echo "Starting instance refresh for Auto Scaling Group: $ASG_NAME"
+          REFRESH_RESULT=$(aws autoscaling start-instance-refresh \
+            --auto-scaling-group-name $ASG_NAME \
+            --preferences '{"MinHealthyPercentage": 90, "InstanceWarmup": 300}' \
+            --output json)
+          
+          REFRESH_ID=$(echo $REFRESH_RESULT | jq -r '.InstanceRefreshId')
+          echo "Started instance refresh with ID: $REFRESH_ID"
+          echo "refresh_id=$REFRESH_ID" >> $GITHUB_OUTPUT
+
+      - name: Wait for Instance Refresh to complete
+        run: |
+          ASG_NAME="${{ steps.get-asg.outputs.asg_name }}"
+          REFRESH_ID="${{ steps.refresh.outputs.refresh_id }}"
+          
+          echo "Waiting for instance refresh to complete (this may take several minutes)..."
+          
+          # Initial delay to let the refresh start
+          sleep 30
+          
+          STATUS="Pending"
+          while [ "$STATUS" == "Pending" ] || [ "$STATUS" == "InProgress" ]; do
+            REFRESH=$(aws autoscaling describe-instance-refreshes \
+              --auto-scaling-group-name $ASG_NAME \
+              --instance-refresh-ids $REFRESH_ID \
+              --query 'InstanceRefreshes[0]' \
+              --output json)
+          
+            STATUS=$(echo $REFRESH | jq -r '.Status')
+            PROGRESS=$(echo $REFRESH | jq -r '.PercentageComplete')
+          
+            echo "$(date '+%Y-%m-%d %H:%M:%S') - Refresh status: $STATUS ($PROGRESS% complete)"
+          
+            if [ "$STATUS" != "Pending" ] && [ "$STATUS" != "InProgress" ]; then
+              break
+            fi
+          
+            # Wait 30 seconds before checking again
+            sleep 30
+          done
+          
+          # Final check
+          if [ "$STATUS" == "Successful" ]; then
+            echo "Instance refresh completed successfully!"
+          else
+            REASON=$(echo $REFRESH | jq -r '.StatusReason')
+            echo "Instance refresh failed with status: $STATUS"
+            echo "Reason: $REASON"
+            exit 1
+          fi
 
       # Clean up credentials after build
       - name: Clean Up Credentials
