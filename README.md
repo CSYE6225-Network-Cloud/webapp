@@ -124,8 +124,9 @@ npm install
 For local development, you will need to set up appropriate environment variables:
 
 ```bash
-npm start
+npm start 
 ```
+
 
 ## Production Environment
 
